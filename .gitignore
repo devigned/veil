@@ -22,3 +22,5 @@ vendor
 !.vscode/extensions.json
 
 debug
+
+veil
