@@ -1,6 +1,11 @@
 package gen
 
-import "github.com/devigned/veil/core"
+import (
+	"os"
+	"path/filepath"
+
+	"github.com/devigned/veil/core"
+)
 
 // Generator generates libraries in other languages by creating bindings in those languages
 // to a Golang project
@@ -19,16 +24,35 @@ func NewGenerator(pkgPath string, outDir string, targets []string) *Generator {
 	}
 }
 
-func fetchProject(pkgPath string) (string, error) {
+func createOutputDir(outDir string) (string, error) {
+	err := os.MkdirAll(outDir, 0755)
+	if err != nil {
+		return "", core.NewSystemError("Could not create output directory: %v", err)
+	}
 
-	return "", nil
+	outDir, err = filepath.Abs(outDir)
+	if err != nil {
+		return "", core.NewSystemError("Could not infer absolute path to output directory: %v", err)
+	}
+
+	return outDir, nil
 }
 
-func (*Generator) bindingGen() error {
+func (g Generator) bindingGen() error {
 	return nil
 }
 
 // Execute builds the target projects
-func (*Generator) Execute() error {
-	return core.NewSystemError("this stuff is totally broken")
+func (g Generator) Execute() error {
+	outDir, err := createOutputDir(g.OutDir)
+	if err != nil {
+		return err
+	}
+
+	_, err = core.NewPackage(g.PkgPath, outDir)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
