@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch",
+            "name": "Generate",
             "type": "go",
             "request": "launch",
             "mode": "debug",
@@ -11,7 +11,7 @@
             "host": "127.0.0.1",
             "program": "${workspaceRoot}/main.go",
             "env": {},
-            "args": ["generate" "--pkg=blah"],
+            "args": ["generate", "-p=github.com/devigned/veil/_example/helloworld"],
             "showLog": true
         }
     ]
