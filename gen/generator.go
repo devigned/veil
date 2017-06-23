@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -49,9 +50,17 @@ func (g Generator) Execute() error {
 		return err
 	}
 
-	_, err = core.NewPackage(g.PkgPath, outDir)
+	pkg, err := core.NewPackage(g.PkgPath, outDir)
 	if err != nil {
 		return err
+	}
+
+	for key := range pkg.GetFuncs() {
+		fmt.Println("func: ", key)
+	}
+
+	for key := range pkg.GetStruct() {
+		fmt.Println("struct: ", key)
 	}
 
 	return nil

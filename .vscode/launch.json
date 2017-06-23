@@ -11,7 +11,7 @@
             "host": "127.0.0.1",
             "program": "${workspaceRoot}/main.go",
             "env": {},
-            "args": ["generate", "-p=github.com/devigned/veil/_example/helloworld"],
+            "args": ["generate", "-p=github.com/devigned/veil/_examples/helloworld"],
             "showLog": true
         }
     ]

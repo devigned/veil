@@ -13,13 +13,17 @@ import (
 
 // Package is a container for ast.Types and Docs
 type Package struct {
-	pkg *types.Package
-	doc *doc.Package
+	pkg     *types.Package
+	doc     *doc.Package
+	funcs   map[string]*types.Func
+	structs map[string]*types.Struct
+	objects map[string]interface{}
+	consts  map[string]types.Const
 }
 
 // NewPackage constructs a Package from pkgPath using the specified working directory
 func NewPackage(pkgPath string, workDir string) (*Package, error) {
-	cmd := exec.Command("go", "install", pkgPath)
+	cmd := exec.Command("go", "get", pkgPath)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -52,12 +56,52 @@ func NewPackage(pkgPath string, workDir string) (*Package, error) {
 
 	docPkg := doc.New(astPkg, buildPkg.ImportPath, 0)
 
-	return newPackage(typesPkg, docPkg), nil
+	veilPkg := &Package{
+		pkg:     typesPkg,
+		doc:     docPkg,
+		funcs:   make(map[string]*types.Func),
+		structs: make(map[string]*types.Struct),
+	}
+
+	if err = veilPkg.build(); err != nil {
+		return nil, err
+	}
+
+	return veilPkg, nil
 }
 
-func newPackage(pkg *types.Package, doc *doc.Package) *Package {
-	return &Package{
-		pkg: pkg,
-		doc: doc,
+func (p Package) GetFuncs() map[string]*types.Func {
+	return p.funcs
+}
+
+func (p Package) GetStruct() map[string]*types.Struct {
+	return p.structs
+}
+
+func (p *Package) build() error {
+
+	scope := p.pkg.Scope()
+	var scopeNames CollectionStringSlice = scope.Names()
+	exportedObjects := scopeNames.Enumerate().
+		Where(func(name interface{}) bool {
+			return scope.Lookup(name.(string)).Exported()
+		}).
+		Select(func(name interface{}) interface{} {
+			return scope.Lookup(name.(string))
+		})
+
+	for obj := range exportedObjects {
+		switch obj := obj.(type) {
+		case *types.Func:
+			p.funcs[obj.FullName()] = obj
+		case *types.TypeName:
+			named := obj.Type().(*types.Named)
+			switch typ := named.Underlying().(type) {
+			case *types.Struct:
+				p.structs[obj.Name()] = typ
+			}
+		}
 	}
+
+	return nil
 }
