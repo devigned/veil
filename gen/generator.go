@@ -59,8 +59,17 @@ func (g Generator) Execute() error {
 		fmt.Println("func: ", key)
 	}
 
-	for key := range pkg.GetStruct() {
+	stuff := pkg.GetStructs()
+	for key, val := range stuff {
 		fmt.Println("struct: ", key)
+		fmt.Println("val: ", stuff[key].Struct())
+		methods := val.Methods()
+		for i := 0; i < len(methods); i++ {
+			fmt.Println("method: ", methods[i].FullName())
+		}
+		// for m := range val.Methods() {
+		// 	fmt.Println("m: ", m)
+		// }
 	}
 
 	return nil

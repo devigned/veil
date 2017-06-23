@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"go/build"
 	"go/doc"
 	"go/importer"
@@ -14,12 +15,10 @@ import (
 
 // Package is a container for ast.Types and Docs
 type Package struct {
-	pkg     *types.Package
-	doc     *doc.Package
-	funcs   map[string]*types.Func
-	structs map[string]*types.Struct
-	objects map[string]interface{}
-	consts  map[string]types.Const
+	pkg          *types.Package
+	doc          *doc.Package
+	funcs        map[string]*types.Func
+	namedStructs map[string]*NamedStruct
 }
 
 // NewPackage constructs a Package from pkgPath using the specified working directory
@@ -58,10 +57,10 @@ func NewPackage(pkgPath string, workDir string) (*Package, error) {
 	docPkg := doc.New(astPkg, buildPkg.ImportPath, 0)
 
 	veilPkg := &Package{
-		pkg:     typesPkg,
-		doc:     docPkg,
-		funcs:   make(map[string]*types.Func),
-		structs: make(map[string]*types.Struct),
+		pkg:          typesPkg,
+		doc:          docPkg,
+		funcs:        make(map[string]*types.Func),
+		namedStructs: make(map[string]*NamedStruct),
 	}
 
 	if err = veilPkg.build(); err != nil {
@@ -75,8 +74,8 @@ func (p Package) GetFuncs() map[string]*types.Func {
 	return p.funcs
 }
 
-func (p Package) GetStruct() map[string]*types.Struct {
-	return p.structs
+func (p Package) GetStructs() map[string]*NamedStruct {
+	return p.namedStructs
 }
 
 func (p *Package) build() error {
@@ -97,9 +96,16 @@ func (p *Package) build() error {
 			p.funcs[obj.FullName()] = obj
 		case *types.TypeName:
 			named := obj.Type().(*types.Named)
-			switch typ := named.Underlying().(type) {
+			switch named.Underlying().(type) {
 			case *types.Struct:
-				p.structs[path.Join(obj.Pkg().Name(), obj.Name())] = typ
+				pkgName := p.pkg.Name()
+				pkgPath := p.pkg.Path()
+				namedStruct := &NamedStruct{
+					named: named,
+				}
+				p.namedStructs[path.Join(pkgPath, pkgName, obj.Name())] = namedStruct
+			default:
+				fmt.Println("default: ", obj)
 			}
 		}
 	}
