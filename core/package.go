@@ -9,6 +9,7 @@ import (
 	"go/types"
 	"os"
 	"os/exec"
+	"path"
 )
 
 // Package is a container for ast.Types and Docs
@@ -98,7 +99,7 @@ func (p *Package) build() error {
 			named := obj.Type().(*types.Named)
 			switch typ := named.Underlying().(type) {
 			case *types.Struct:
-				p.structs[obj.Name()] = typ
+				p.structs[path.Join(obj.Pkg().Name(), obj.Name())] = typ
 			}
 		}
 	}
