@@ -1,7 +1,9 @@
-package core
+package golang
 
 import (
 	"go/types"
+
+	"github.com/marstr/collection"
 )
 
 // NamedStruct is a helpful facade over types.Named which is intended to only contain a struct
@@ -22,4 +24,16 @@ func (n NamedStruct) Methods() []*types.Func {
 		methods = append(methods, meth)
 	}
 	return methods
+}
+
+// CollectionNamedSlice is a wrapper type for []NamedType
+type CollectionNamedSlice []NamedStruct
+
+// Enumerate will create an enumerator for a []NamedType
+func (nt CollectionNamedSlice) Enumerate() collection.Enumerator {
+	var interfaceSlice = make([]interface{}, len(nt))
+	for i, d := range nt {
+		interfaceSlice[i] = d
+	}
+	return collection.AsEnumerator(interfaceSlice...)
 }

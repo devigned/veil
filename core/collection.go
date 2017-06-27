@@ -13,15 +13,3 @@ func (sl CollectionStringSlice) Enumerate() collection.Enumerator {
 	}
 	return collection.AsEnumerator(interfaceSlice...)
 }
-
-// CollectionNamedSlice is a wrapper type for []NamedType
-type CollectionNamedSlice []NamedStruct
-
-// Enumerate will create an enumerator for a []NamedType
-func (nt CollectionNamedSlice) Enumerate() collection.Enumerator {
-	var interfaceSlice = make([]interface{}, len(nt))
-	for i, d := range nt {
-		interfaceSlice[i] = d
-	}
-	return collection.AsEnumerator(interfaceSlice...)
-}

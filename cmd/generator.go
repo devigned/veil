@@ -1,11 +1,13 @@
-package gen
+package cmd
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/devigned/veil/bind"
 	"github.com/devigned/veil/core"
+	"github.com/devigned/veil/golang"
 )
 
 // Generator generates libraries in other languages by creating bindings in those languages
@@ -39,10 +41,6 @@ func createOutputDir(outDir string) (string, error) {
 	return outDir, nil
 }
 
-func (g Generator) bindingGen() error {
-	return nil
-}
-
 // Execute builds the target projects
 func (g Generator) Execute() error {
 	outDir, err := createOutputDir(g.OutDir)
@@ -50,7 +48,7 @@ func (g Generator) Execute() error {
 		return err
 	}
 
-	pkg, err := core.NewPackage(g.PkgPath, outDir)
+	pkg, err := golang.NewPackage(g.PkgPath, outDir)
 	if err != nil {
 		return err
 	}
@@ -66,6 +64,11 @@ func (g Generator) Execute() error {
 		for _, meth := range val.Methods() {
 			fmt.Println("method: ", meth.FullName())
 		}
+	}
+
+	for _, target := range g.Targets {
+		binder := bind.NewBinder(pkg, target)
+		binder.Bind(nil)
 	}
 
 	return nil

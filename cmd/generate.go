@@ -6,7 +6,6 @@ import (
 	"path"
 
 	"github.com/devigned/veil/core"
-	"github.com/devigned/veil/gen"
 	"github.com/marstr/collection"
 	"github.com/spf13/cobra"
 )
@@ -33,7 +32,7 @@ for a Golang package in each of the targets`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return gen.NewGenerator(pkgPath, outDir, targets).Execute()
+			return NewGenerator(pkgPath, outDir, targets).Execute()
 		},
 	}
 	supportedTargets = []string{defaultTarget, "java"}

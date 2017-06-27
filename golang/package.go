@@ -1,4 +1,4 @@
-package core
+package golang
 
 import (
 	"fmt"
@@ -11,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path"
+
+	"github.com/devigned/veil/core"
 )
 
 // Package is a container for ast.Types and Docs
@@ -23,24 +25,24 @@ type Package struct {
 
 // NewPackage constructs a Package from pkgPath using the specified working directory
 func NewPackage(pkgPath string, workDir string) (*Package, error) {
-	cmd := exec.Command("go", "get", pkgPath)
+	cmd := exec.Command("go", "install", pkgPath)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir = workDir
 
 	if err := cmd.Run(); err != nil {
-		return nil, NewSystemErrorF("error installing [%s]: %v\n", pkgPath, err)
+		return nil, core.NewSystemErrorF("error installing [%s]: %v\n", pkgPath, err)
 	}
 
 	buildPkg, err := build.Import(pkgPath, workDir, 0)
 	if err != nil {
-		return nil, NewSystemErrorF("error resolving import path [%s]: %v\n", pkgPath, err)
+		return nil, core.NewSystemErrorF("error resolving import path [%s]: %v\n", pkgPath, err)
 	}
 
 	typesPkg, err := importer.Default().Import(buildPkg.ImportPath)
 	if err != nil {
-		return nil, NewSystemErrorF("error importing package [%v]: %v\n", buildPkg.ImportPath, err)
+		return nil, core.NewSystemErrorF("error importing package [%v]: %v\n", buildPkg.ImportPath, err)
 	}
 
 	fset := token.NewFileSet()
@@ -51,7 +53,7 @@ func NewPackage(pkgPath string, workDir string) (*Package, error) {
 
 	astPkg, ok := astPkgs[typesPkg.Name()]
 	if !ok {
-		return nil, NewSystemErrorF("could not find AST for package %q", typesPkg.Name())
+		return nil, core.NewSystemErrorF("could not find AST for package %q", typesPkg.Name())
 	}
 
 	docPkg := doc.New(astPkg, buildPkg.ImportPath, 0)
@@ -81,7 +83,7 @@ func (p Package) GetStructs() map[string]*NamedStruct {
 func (p *Package) build() error {
 
 	scope := p.pkg.Scope()
-	var scopeNames CollectionStringSlice = scope.Names()
+	var scopeNames core.CollectionStringSlice = scope.Names()
 	exportedObjects := scopeNames.Enumerate().
 		Where(func(name interface{}) bool {
 			return scope.Lookup(name.(string)).Exported()

@@ -4,6 +4,10 @@ import (
 	"fmt"
 )
 
+var (
+	magicNumber = 0
+)
+
 // Hello is a complex structure
 type Hello struct {
 	World World
@@ -19,13 +23,17 @@ type World struct {
 	blah      float64
 }
 
+func init() {
+	magicNumber = 42
+}
+
 func privateFunc(arg1 int) (int, error) {
-	return 42, nil
+	return magicNumber, nil
 }
 
 // PublicUnbound returns the meaning of everything
 func PublicUnbound(arg1 int) (int, error) {
-	return 42, nil
+	return magicNumber, nil
 }
 
 // PublicUnboundError returns an error
