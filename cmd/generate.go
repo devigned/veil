@@ -19,13 +19,15 @@ var (
 		Long: `Give a set of target language / platforms generate bindings
 for a Golang package in each of the targets`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			requiredFlags := collection.AsEnumerator([]interface{}{targets, pkgPath, outDir}...)
-			allGood := requiredFlags.All(func(a interface{}) bool {
-				if t, ok := a.([]string); ok {
-					return len(t) > 0
-				}
-				return len(a.(string)) > 0
-			})
+			done := make(chan struct{})
+			allGood := collection.AsEnumerable(targets, pkgPath, outDir).Enumerate(done).
+				All(func(a interface{}) bool {
+					if t, ok := a.([]string); ok {
+						return len(t) > 0
+					}
+					return len(a.(string)) > 0
+				})
+			close(done)
 			if !allGood {
 				return core.NewUserError("Please provide --targets, --outdir and --pkg")
 			}

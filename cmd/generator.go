@@ -53,11 +53,11 @@ func (g Generator) Execute() error {
 		return err
 	}
 
-	for key := range pkg.GetFuncs() {
+	for key := range pkg.Funcs() {
 		fmt.Println("func: ", key)
 	}
 
-	stuff := pkg.GetStructs()
+	stuff := pkg.Structs()
 	for key, val := range stuff {
 		fmt.Println("struct: ", key)
 		fmt.Println("val: ", stuff[key].Struct())
@@ -67,8 +67,11 @@ func (g Generator) Execute() error {
 	}
 
 	for _, target := range g.Targets {
-		binder := bind.NewBinder(pkg, target)
-		binder.Bind(nil)
+		binder, err := bind.NewBinder(pkg, target)
+		if err != nil {
+			return err
+		}
+		binder.Bind(outDir)
 	}
 
 	return nil

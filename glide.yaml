@@ -4,4 +4,4 @@ import:
   subpackages:
   - cobra
 - package: github.com/marstr/collection
-  version: ^0.2.0
+  version: master

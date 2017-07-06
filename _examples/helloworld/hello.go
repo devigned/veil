@@ -32,8 +32,8 @@ func privateFunc(arg1 int) (int, error) {
 }
 
 // PublicUnbound returns the meaning of everything
-func PublicUnbound(arg1 int) (int, error) {
-	return magicNumber, nil
+func PublicUnbound(arg1 int) int {
+	return magicNumber
 }
 
 // PublicUnboundError returns an error
@@ -43,7 +43,7 @@ func PublicUnboundError(arg1 int) (int, error) {
 
 // PublicBound returns the meaning of everything
 func (h *Hello) PublicBound(arg1 int) (string, error) {
-	return "42", nil
+	return h.Bar, nil
 }
 
 // NewHello constructs a new instance of Hello

@@ -1,8 +1,15 @@
-hash: a2ef083eb31fc5517e669f4033f8075fa37200029424aa56836f063f1d99f920
-updated: 2017-06-21T13:12:24.283350772-04:00
+hash: a14bfdf176b362887bfcecfc4dabf755eb27365d61704feaa7aec0da4636e044
+updated: 2017-06-30T09:46:33.674583261-07:00
 imports:
 - name: github.com/fsnotify/fsnotify
   version: 4da3e2cfbabc9f751898f250b49f2439785783a1
+- name: github.com/go-python/gopy
+  version: fddd3389603cb48ba41a7397adb361be9291c90d
+  subpackages:
+  - _examples/cpkg
+  - _examples/hi
+  - _examples/seqs
+  - _examples/structs
 - name: github.com/hashicorp/hcl
   version: 392dba7d905ed5d04a5794ba89f558b27e2ba1ca
   subpackages:
@@ -19,7 +26,7 @@ imports:
 - name: github.com/magiconair/properties
   version: 51463bfca2576e06c62a8504b5c0f06d61312647
 - name: github.com/marstr/collection
-  version: 103955393941f39274087321741a17a47778069a
+  version: 76ded0505420eca63448c5cde6a1845f69030f80
 - name: github.com/mitchellh/go-homedir
   version: b8bc1bf767474819792c23f32d8286a45736f1c6
 - name: github.com/mitchellh/mapstructure

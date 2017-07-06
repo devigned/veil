@@ -38,7 +38,7 @@ func initConfig() {
 			os.Exit(1)
 		}
 
-		// Search config in home directory with name ".blha" (without extension).
+		// Search config in home directory with name ".veil" (without extension).
 		viper.AddConfigPath(home)
 		viper.SetConfigName(".veil")
 	}

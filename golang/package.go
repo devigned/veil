@@ -13,6 +13,7 @@ import (
 	"path"
 
 	"github.com/devigned/veil/core"
+	"github.com/marstr/collection"
 )
 
 // Package is a container for ast.Types and Docs
@@ -72,19 +73,22 @@ func NewPackage(pkgPath string, workDir string) (*Package, error) {
 	return veilPkg, nil
 }
 
-func (p Package) GetFuncs() map[string]*types.Func {
+func (p Package) Funcs() map[string]*types.Func {
 	return p.funcs
 }
 
-func (p Package) GetStructs() map[string]*NamedStruct {
+func (p Package) Structs() map[string]*NamedStruct {
 	return p.namedStructs
+}
+
+func (p Package) Name() string {
+	return p.pkg.Name()
 }
 
 func (p *Package) build() error {
 
 	scope := p.pkg.Scope()
-	var scopeNames core.CollectionStringSlice = scope.Names()
-	exportedObjects := scopeNames.Enumerate().
+	exportedObjects := collection.AsEnumerable(scope.Names()).Enumerate(nil).
 		Where(func(name interface{}) bool {
 			return scope.Lookup(name.(string)).Exported()
 		}).
