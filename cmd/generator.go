@@ -8,6 +8,7 @@ import (
 	"github.com/devigned/veil/bind"
 	"github.com/devigned/veil/core"
 	"github.com/devigned/veil/golang"
+	"go/types"
 )
 
 // Generator generates libraries in other languages by creating bindings in those languages
@@ -53,17 +54,26 @@ func (g Generator) Execute() error {
 		return err
 	}
 
-	for key := range pkg.Funcs() {
-		fmt.Println("func: ", key)
-	}
+	//for key := range pkg.FuncsByName() {
+	//	fmt.Println("func: ", key)
+	//}
+	//
+	//stuff := pkg.StructsByName()
+	//for key, val := range stuff {
+	//	fmt.Println("struct: ", key)
+	//	fmt.Println("val: ", stuff[key].Struct())
+	//	for _, meth := range val.Methods() {
+	//		fmt.Println("method: ", meth.FullName())
+	//	}
+	//}
 
-	stuff := pkg.Structs()
-	for key, val := range stuff {
-		fmt.Println("struct: ", key)
-		fmt.Println("val: ", stuff[key].Struct())
-		for _, meth := range val.Methods() {
-			fmt.Println("method: ", meth.FullName())
+	for _, t := range pkg.ExportedTypes() {
+		switch sel := t.(type) {
+		case *types.Slice:
+			fmt.Println(fmt.Sprintf("slice: %v", sel))
 		}
+
+		fmt.Println("exported type: ", t)
 	}
 
 	for _, target := range g.Targets {

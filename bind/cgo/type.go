@@ -1,25 +1,56 @@
 package cgo
 
 import (
+	"fmt"
+	"github.com/marstr/collection"
 	"go/ast"
 	"go/token"
-	"github.com/marstr/collection"
+	"go/types"
 	"strings"
-	"fmt"
 )
 
 const (
 	incrementRefFuncName = "cgo_incref"
 )
 
+type SliceWrapper struct {
+	elem types.Type
+}
+
+// NewSliceWrapper wraps types.Slice to provide a consistent comparison
+func NewSliceWrapper(elem types.Type) SliceWrapper {
+	return SliceWrapper{
+		elem: elem,
+	}
+}
+
+func (t SliceWrapper) Underlying() types.Type { return t }
+func (t SliceWrapper) String() string         { return types.TypeString(types.NewSlice(t.elem), nil) }
+
+type ArrayWrapper struct {
+	elem types.Type
+	len  int64
+}
+
+// NewArrayWrapper wraps types.Array to provide a consistent comparison
+func NewArrayWrapper(elem types.Type, len int64) *ArrayWrapper {
+	return &ArrayWrapper{
+		elem: elem,
+		len:  len,
+	}
+}
+
+func (t ArrayWrapper) Underlying() types.Type { return t }
+func (t ArrayWrapper) String() string         { return types.TypeString(types.NewArray(t.elem, t.len), nil) }
+
 func WrapType(typeName string, selectionExpr string, comments ...string) ast.Decl {
 	objs := collection.AsEnumerable(comments).Enumerate(nil).
 		Select(func(item interface{}) interface{} {
-		return &ast.Comment{
-			Text: item.(string),
-			Slash: token.Pos(1),
-		}
-	})
+			return &ast.Comment{
+				Text:  item.(string),
+				Slash: token.Pos(1),
+			}
+		})
 
 	var cs []*ast.Comment
 	for i := range objs {
@@ -38,7 +69,7 @@ func WrapType(typeName string, selectionExpr string, comments ...string) ast.Dec
 			&ast.TypeSpec{
 				Name: NewIdent(typeName),
 				Type: &ast.SelectorExpr{
-					X: NewIdent(selections[0]),
+					X:   NewIdent(selections[0]),
 					Sel: NewIdent(selections[1]),
 				},
 			},
@@ -52,18 +83,18 @@ func ArrayConstructor(goType, cType string) *ast.FuncDecl {
 	funcName := fmt.Sprintf("%s_new", cType)
 	varIdent := NewIdent("o")
 	unsafePtrSelector := &ast.SelectorExpr{
-		X: NewIdent("unsafe"),
+		X:   NewIdent("unsafe"),
 		Sel: NewIdent("Pointer"),
 	}
 	varRefExpr := &ast.UnaryExpr{
 		Op: token.AND,
-		X: varIdent,
+		X:  varIdent,
 	}
 
 	funcDecl := ast.FuncDecl{
 		Doc: &ast.CommentGroup{
 			List: []*ast.Comment{
-				{Text: fmt.Sprintf("//export %s", funcName) },
+				{Text: fmt.Sprintf("//export %s", funcName)},
 			},
 		},
 		Name: NewIdent(funcName),
@@ -83,7 +114,7 @@ func ArrayConstructor(goType, cType string) *ast.FuncDecl {
 						Tok: token.VAR,
 						Specs: []ast.Spec{
 							&ast.ValueSpec{
-								Names: []*ast.Ident{varIdent },
+								Names: []*ast.Ident{varIdent},
 								Type: &ast.ArrayType{
 									Elt: NewIdent(goType),
 								},

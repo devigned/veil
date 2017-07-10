@@ -5,3 +5,7 @@ import:
   - cobra
 - package: github.com/marstr/collection
   version: master
+- package: github.com/stretchr/testify
+  version: ^1.1.4
+- package: github.com/emirpasic/gods
+  version: ^1.9.0
