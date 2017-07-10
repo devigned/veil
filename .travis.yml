@@ -10,3 +10,4 @@ install:
 script:
   - glide install
   - go test -v $(go list ./... | grep -v /vendor/)
+  
