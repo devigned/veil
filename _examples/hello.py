@@ -20,6 +20,9 @@ class cffi_helper(object):
 
 def main():
   print(cffi_helper.get_magic_number())
+  # j = 0
+  # for i in range(10000000):
+  #   j += 1
 
 if __name__ == "__main__":
     main()

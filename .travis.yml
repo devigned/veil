@@ -8,5 +8,4 @@ install:
 #  - go get github.com/golang/lint/golint
 
 script:
-  - glide install
-  - go test -v $(go list ./... | grep -v /vendor/)
+  - make test
