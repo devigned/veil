@@ -3,6 +3,8 @@
 *.dll
 *.so
 *.dylib
+*.o
+_examples/_*
 
 # Test binary, build with `go test -c`
 *.test
@@ -30,3 +32,4 @@ veil
 templates
 
 _template
+.DS_Store

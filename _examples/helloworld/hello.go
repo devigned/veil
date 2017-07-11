@@ -30,7 +30,7 @@ type notExported struct {
 }
 
 func init() {
-	magicNumber = 42
+	magicNumber = 10
 }
 
 func privateFunc() (int, error) {
