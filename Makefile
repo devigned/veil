@@ -18,7 +18,7 @@ M = $(shell printf "\033[34;1m▶\033[0m")
 TIMEOUT = 10
 
 .PHONY: all
-all: fmt lint vendor | $(BASE) ; $(info $(M) building executable…) @ ## Build program binary
+all: fmt vendor | $(BASE) ; $(info $(M) building executable…) @ ## Build program binary
 	$Q cd $(BASE) && $(GO) build \
 		-tags release \
 		-ldflags '-X $(PACKAGE)/cmd.Version=$(VERSION) -X $(PACKAGE)/cmd.BuildDate=$(DATE)' \
@@ -82,13 +82,13 @@ glide.lock: glide.yaml | $(BASE) ; $(info $(M) updating dependencies…)
 	@touch $@
 vendor: glide.lock | $(BASE) ; $(info $(M) retrieving dependencies…)
 	$Q cd $(BASE) && $(GLIDE) --quiet install
-	@ln -sf . vendor/src
 	@touch $@
 
 # Misc
 
 .PHONY: clean
 clean: ; $(info $(M) cleaning…)	@ ## Cleanup everything
+	@rm -rf $(BASE)/bin
 	@rm -rf test/tests.* test/coverage.*
 
 .PHONY: help
