@@ -2,8 +2,8 @@ package cgo
 
 import (
 	"go/ast"
-	"go/types"
 	"go/token"
+	"go/types"
 )
 
 // ArrayWrapper is a wrapper for the
@@ -48,7 +48,7 @@ func (s SliceWrapper) NewAst() []ast.Decl {
 	goTypeIdent := NewIdent(s.GoName())
 	target := &ast.UnaryExpr{
 		Op: token.AND,
-		X: localVarIdent,
+		X:  localVarIdent,
 	}
 
 	goType := &ast.ArrayType{

@@ -7,7 +7,7 @@ import (
 
 func IncrementRef(target ast.Expr) *ast.ExprStmt {
 	return &ast.ExprStmt{
-		X:&ast.CallExpr{
+		X: &ast.CallExpr{
 			Fun: NewIdent("cgo_incref"),
 			Args: []ast.Expr{
 				&ast.CallExpr{
@@ -29,7 +29,7 @@ func NewIdent(name string) *ast.Ident {
 
 func UnsafePtrSelector() *ast.SelectorExpr {
 	return &ast.SelectorExpr{
-		X: NewIdent("unsafe"),
+		X:   NewIdent("unsafe"),
 		Sel: NewIdent("Pointer"),
 	}
 }
@@ -40,8 +40,8 @@ func DeclareVar(name *ast.Ident, t ast.Expr) *ast.DeclStmt {
 			Tok: token.VAR,
 			Specs: []ast.Spec{
 				&ast.ValueSpec{
-					Names: []*ast.Ident{name },
-					Type: t,
+					Names: []*ast.Ident{name},
+					Type:  t,
 				},
 			},
 		},

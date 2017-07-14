@@ -35,4 +35,3 @@ func (sw StructWrapper) String() string { return types.TypeString(sw.Named, nil)
 func (s StructWrapper) ToCgoAst() []ast.Decl {
 	return nil
 }
-
