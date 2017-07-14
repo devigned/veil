@@ -5,43 +5,12 @@ import (
 	"github.com/marstr/collection"
 	"go/ast"
 	"go/token"
-	"go/types"
 	"strings"
 )
 
 const (
 	incrementRefFuncName = "cgo_incref"
 )
-
-type SliceWrapper struct {
-	elem types.Type
-}
-
-// NewSliceWrapper wraps types.Slice to provide a consistent comparison
-func NewSliceWrapper(elem types.Type) SliceWrapper {
-	return SliceWrapper{
-		elem: elem,
-	}
-}
-
-func (t SliceWrapper) Underlying() types.Type { return t }
-func (t SliceWrapper) String() string         { return types.TypeString(types.NewSlice(t.elem), nil) }
-
-type ArrayWrapper struct {
-	elem types.Type
-	len  int64
-}
-
-// NewArrayWrapper wraps types.Array to provide a consistent comparison
-func NewArrayWrapper(elem types.Type, len int64) *ArrayWrapper {
-	return &ArrayWrapper{
-		elem: elem,
-		len:  len,
-	}
-}
-
-func (t ArrayWrapper) Underlying() types.Type { return t }
-func (t ArrayWrapper) String() string         { return types.TypeString(types.NewArray(t.elem, t.len), nil) }
 
 func WrapType(typeName string, selectionExpr string, comments ...string) ast.Decl {
 	objs := collection.AsEnumerable(comments).Enumerate(nil).

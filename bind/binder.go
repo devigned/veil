@@ -5,14 +5,12 @@ import (
 	"go/ast"
 
 	"bufio"
-	"github.com/devigned/veil/bind/cgo"
 	"github.com/devigned/veil/core"
 	"github.com/devigned/veil/golang"
-	"github.com/marstr/collection"
+	"github.com/devigned/veil/golang/cgo"
 	"go/parser"
 	"go/printer"
 	"go/token"
-	"go/types"
 	"os"
 )
 
@@ -42,29 +40,16 @@ func NewBinder(pkg *golang.Package, target string) (Bindable, error) {
 // layer to build FFI language bindings.
 func cgoAst(pkg *golang.Package) *ast.File {
 
-	//printPracticeAst()
-	i := 0
-	funcs := make([]*types.Func, len(pkg.FuncsByName()))
-	for _, v := range pkg.FuncsByName() {
-		funcs[i] = v
-		i++
-	}
-	objs := collection.AsEnumerable(funcs).
-		Enumerate(nil).
-		Select(func(item interface{}) interface{} {
-			return cgo.Func(item.(*types.Func))
-		}).ToSlice()
-	funcDecls := cgo.ToDecls(objs)
-
+	printPracticeAst()
 	declarations := []ast.Decl{
 		cgo.Imports("C"),
 		cgo.Imports("fmt", "sync", "unsafe", "strconv", "strings", "os"),
-		cgo.WrapType("something", "unsafe.Pointer", "//export something", "// something wraps []string"),
 	}
 
-	for _, item := range funcDecls {
+	for _, item := range pkg.ToCgoAst() {
 		declarations = append(declarations, item)
 	}
+
 	declarations = append(declarations, cgo.MainFunc())
 
 	mainFile := &ast.File{
