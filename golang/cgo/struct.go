@@ -25,13 +25,14 @@ func (sw StructWrapper) Methods() []*types.Func {
 	return methods
 }
 
-// ToCgoAst returns the go/ast representation of the CGo wrapper of the Array type
-func (s StructWrapper) ToCgoAst() []ast.Decl {
-	return nil
-}
-
 // Underlying returns the underlying type
 func (sw StructWrapper) Underlying() types.Type { return sw.Named }
 
 // Underlying returns the string representation of the type (types.Type)
 func (sw StructWrapper) String() string { return types.TypeString(sw.Named, nil) }
+
+// ToCgoAst returns the go/ast representation of the CGo wrapper of the Array type
+func (s StructWrapper) ToCgoAst() []ast.Decl {
+	return nil
+}
+

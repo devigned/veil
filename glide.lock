@@ -1,5 +1,5 @@
 hash: bd2a043d725fb3e657b93e861bb58d27ad093b4de1cc625ae090f410595b7552
-updated: 2017-07-11T14:56:53.012380849-07:00
+updated: 2017-07-14T12:49:38.18802178-07:00
 imports:
 - name: github.com/emirpasic/gods
   version: f6c17b524822278a87e3b3bd809fec33b51f5b46
@@ -10,13 +10,6 @@ imports:
   - utils
 - name: github.com/fsnotify/fsnotify
   version: 4da3e2cfbabc9f751898f250b49f2439785783a1
-- name: github.com/go-python/gopy
-  version: fddd3389603cb48ba41a7397adb361be9291c90d
-  subpackages:
-  - _examples/cpkg
-  - _examples/hi
-  - _examples/seqs
-  - _examples/structs
 - name: github.com/hashicorp/hcl
   version: 392dba7d905ed5d04a5794ba89f558b27e2ba1ca
   subpackages:

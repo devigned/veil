@@ -40,7 +40,7 @@ func NewBinder(pkg *golang.Package, target string) (Bindable, error) {
 // layer to build FFI language bindings.
 func cgoAst(pkg *golang.Package) *ast.File {
 
-	printPracticeAst()
+	//printPracticeAst()
 	declarations := []ast.Decl{
 		cgo.Imports("C"),
 		cgo.Imports("fmt", "sync", "unsafe", "strconv", "strings", "os"),
@@ -60,7 +60,7 @@ func cgoAst(pkg *golang.Package) *ast.File {
 	}
 
 	// Print the AST.
-	//ast.Print(&token.FileSet{}, mainFile)
+	// ast.Print(&token.FileSet{}, mainFile)
 	writer := bufio.NewWriter(os.Stdout)
 	printer.Fprint(writer, &token.FileSet{}, mainFile)
 	defer writer.Flush()
@@ -74,15 +74,12 @@ func printPracticeAst() {
 
 	import "C"
 
-	//export cgo_type_0x3129483107
-	// cgo_type_0x3129483107 wraps []string
-	type cgo_type_0x3129483107 unsafe.Pointer
-
-	//export cgo_func_0x3129483107_eface
-	func cgo_func_0x3129483107_eface(self cgo_type_0x3129483107) interface{} {
-		var v interface{} = *(*[]string)(unsafe.Pointer(self))
-		return v
-	}
+//export cgo_func_0x3129483107_new
+func cgo_func_0x3129483107_new() cgo_type_0x3129483107 {
+	var o []string
+	cgopy_incref(unsafe.Pointer(&o))
+	return (cgo_type_0x3129483107)(unsafe.Pointer(&o))
+}
 		`
 
 	fset := token.NewFileSet() // positions are relative to fset
