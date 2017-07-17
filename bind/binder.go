@@ -74,11 +74,10 @@ func printPracticeAst() {
 
 	import "C"
 
-//export cgo_func_0x3129483107_new
-func cgo_func_0x3129483107_new() cgo_type_0x3129483107 {
-	var o []string
-	cgopy_incref(unsafe.Pointer(&o))
-	return (cgo_type_0x3129483107)(unsafe.Pointer(&o))
+//export cgo_func_helloworld_Hello_str
+func cgo_func_helloworld_Hello_str(self cgo_type_helloworld_Hello) string {
+	return fmt.Sprintf("%#v", *(*helloworld.Hello)(unsafe.Pointer(self)))
+}
 }
 		`
 

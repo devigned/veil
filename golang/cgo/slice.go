@@ -31,6 +31,7 @@ func (t SliceWrapper) String() string {
 // ToCgoAst returns the go/ast representation of the CGo wrapper of the Slice type
 func (s SliceWrapper) ToCgoAst() []ast.Decl {
 	decls := s.NewAst()
+	decls = append(decls, s.StringAst()...)
 	return decls
 }
 
@@ -42,6 +43,7 @@ func (s SliceWrapper) CGoName() string {
 	return "slice_of_" + s.elem.String()
 }
 
+// NewAst produces the []ast.Decl to construct a slice type and increment it's reference count
 func (s SliceWrapper) NewAst() []ast.Decl {
 	functionName := s.CGoName() + "_new"
 	localVarIdent := NewIdent("o")
@@ -55,16 +57,9 @@ func (s SliceWrapper) NewAst() []ast.Decl {
 		Elt: NewIdent(s.elem.String()),
 	}
 
-	exportComment := []*ast.Comment{
-		{
-			Text:  "//export " + functionName,
-			Slash: token.Pos(1),
-		},
-	}
-
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
-			List: exportComment,
+			List: ExportComments(functionName),
 		},
 		Name: NewIdent(functionName),
 		Type: &ast.FuncType{
@@ -79,6 +74,47 @@ func (s SliceWrapper) NewAst() []ast.Decl {
 				DeclareVar(localVarIdent, goType),
 				IncrementRef(target),
 				CastReturn(goTypeIdent, target),
+			},
+		},
+	}
+
+	return []ast.Decl{funcDecl}
+}
+
+// StringAst produces the []ast.Decl to provide a string representation of the slice
+func (s SliceWrapper) StringAst() []ast.Decl {
+	functionName := s.CGoName() + "_str"
+	selfIdent := NewIdent("self")
+	goTypeIdent := NewIdent(s.GoName())
+	stringIdent := NewIdent("string")
+
+	castExpression := CastUnsafePtr(DeRef(goTypeIdent), selfIdent)
+	deRef := DeRef(castExpression)
+	sprintf := FormatSprintf("%#v", deRef)
+
+	funcDecl := &ast.FuncDecl{
+		Doc: &ast.CommentGroup{
+			List: ExportComments(functionName),
+		},
+		Name: NewIdent(functionName),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{
+				List: []*ast.Field{
+					{
+						Names: []*ast.Ident{selfIdent},
+						Type:  goTypeIdent,
+					},
+				},
+			},
+			Results: &ast.FieldList{
+				List: []*ast.Field{
+					{Type: stringIdent},
+				},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				Return(sprintf),
 			},
 		},
 	}
