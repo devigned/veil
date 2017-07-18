@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/devigned/veil/bind"
+	"github.com/devigned/veil/cgo"
 	"github.com/devigned/veil/core"
-	"github.com/devigned/veil/golang"
 )
 
 // Generator generates libraries in other languages by creating bindings in those languages
@@ -48,7 +48,7 @@ func (g Generator) Execute() error {
 		return err
 	}
 
-	pkg, err := golang.NewPackage(g.PkgPath, outDir)
+	pkg, err := cgo.NewPackage(g.PkgPath, outDir)
 	if err != nil {
 		return err
 	}

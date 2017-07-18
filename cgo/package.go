@@ -1,4 +1,4 @@
-package golang
+package cgo
 
 import (
 	"go/build"
@@ -11,7 +11,6 @@ import (
 	"os/exec"
 
 	"github.com/devigned/veil/core"
-	"github.com/devigned/veil/golang/cgo"
 	"github.com/emirpasic/gods/sets/hashset"
 	"github.com/marstr/collection"
 	"go/ast"
@@ -85,11 +84,11 @@ func (p Package) Funcs() []types.Func {
 	return output
 }
 
-func (p Package) Structs() []cgo.StructWrapper {
+func (p Package) Structs() []Struct {
 	values := p.namedStructs.Values()
-	output := make([]cgo.StructWrapper, len(values))
+	output := make([]Struct, len(values))
 	for i, item := range values {
-		output[i] = item.(cgo.StructWrapper)
+		output[i] = item.(Struct)
 	}
 	return output
 }
@@ -121,7 +120,7 @@ func (p *Package) build() error {
 	for obj := range exportedObjects {
 		switch obj := obj.(type) {
 		case *types.Func:
-			funcWrapper := cgo.FuncWrapper{obj}
+			funcWrapper := Func{obj}
 			p.funcs.Add(funcWrapper)
 			p.exportedAstables.Add(funcWrapper)
 			for _, astTransformable := range funcExportedTypes(obj) {
@@ -131,7 +130,7 @@ func (p *Package) build() error {
 			named := obj.Type().(*types.Named)
 			switch named.Underlying().(type) {
 			case *types.Struct:
-				structWapper := &cgo.StructWrapper{named}
+				structWapper := &Struct{named}
 				p.namedStructs.Add(structWapper)
 				p.exportedAstables.Add(structWapper)
 				for _, v := range structWapper.Methods() {
@@ -159,7 +158,7 @@ func (pkg Package) ToCgoAst() []ast.Decl {
 	decls := []ast.Decl{}
 
 	for _, t := range pkg.exportedAstables.Values() {
-		transformer := t.(cgo.AstTransformer)
+		transformer := t.(AstTransformer)
 		for _, d := range transformer.ToCgoAst() {
 			decls = append(decls, d)
 		}
@@ -168,8 +167,8 @@ func (pkg Package) ToCgoAst() []ast.Decl {
 	return decls
 }
 
-func funcExportedTypes(fun *types.Func) []cgo.AstTransformer {
-	typs := []cgo.AstTransformer{}
+func funcExportedTypes(fun *types.Func) []AstTransformer {
+	typs := []AstTransformer{}
 	sig := fun.Type().(*types.Signature)
 	params := sig.Params()
 	for i := 0; i < params.Len(); i++ {
@@ -191,7 +190,7 @@ func funcExportedTypes(fun *types.Func) []cgo.AstTransformer {
 	return typs
 }
 
-func shouldWrapType(t types.Type) (cgo.AstTransformer, bool) {
+func shouldWrapType(t types.Type) (AstTransformer, bool) {
 	underlying := t.Underlying()
 	switch u := underlying.(type) {
 	case *types.Basic:
@@ -199,15 +198,15 @@ func shouldWrapType(t types.Type) (cgo.AstTransformer, bool) {
 	case *types.Pointer:
 		return shouldWrapType(u.Elem())
 	case *types.Slice:
-		return cgo.NewSliceWrapper(u.Elem()), true
+		return NewSlice(u.Elem()), true
 	case *types.Array:
-		return cgo.NewArrayWrapper(u.Elem(), u.Len()), true
+		return NewArray(u.Elem(), u.Len()), true
 	default:
 		return nil, false
 	}
 }
 
-func shouldWrapField(f *types.Var) (cgo.AstTransformer, bool) {
+func shouldWrapField(f *types.Var) (AstTransformer, bool) {
 	if f.Exported() {
 		return shouldWrapType(f.Type())
 	}

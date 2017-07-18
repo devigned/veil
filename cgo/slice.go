@@ -7,48 +7,49 @@ import (
 )
 
 // ArrayWrapper is a wrapper for the
-type SliceWrapper struct {
+type Slice struct {
 	elem types.Type
 }
 
 // NewSliceWrapper wraps types.Slice to provide a consistent comparison
-func NewSliceWrapper(elem types.Type) SliceWrapper {
-	return SliceWrapper{
+func NewSlice(elem types.Type) Slice {
+	return Slice{
 		elem: elem,
 	}
 }
 
 // Underlying returns the underlying type of the Slice (types.Type)
-func (t SliceWrapper) Underlying() types.Type {
+func (t Slice) Underlying() types.Type {
 	return t
 }
 
 // Underlying returns the string representation of the type (types.Type)
-func (t SliceWrapper) String() string {
+func (t Slice) String() string {
 	return types.TypeString(types.NewSlice(t.elem), nil)
 }
 
 // ToCgoAst returns the go/ast representation of the CGo wrapper of the Slice type
-func (s SliceWrapper) ToCgoAst() []ast.Decl {
-	decls := s.NewAst()
-	decls = append(decls, s.StringAst()...)
-	decls = append(decls, s.ItemAst()...)
-	decls = append(decls, s.ItemSetAst()...)
-	decls = append(decls, s.ItemAppendAst()...)
-	decls = append(decls, s.DestroyAst()...)
-	return decls
+func (s Slice) ToCgoAst() []ast.Decl {
+	return []ast.Decl{
+		s.NewAst(),
+		s.StringAst(),
+		s.ItemAst(),
+		s.ItemSetAst(),
+		s.ItemAppendAst(),
+		s.DestroyAst(),
+	}
 }
 
-func (s SliceWrapper) GoName() string {
+func (s Slice) GoName() string {
 	return "[]" + s.elem.String()
 }
 
-func (s SliceWrapper) CGoName() string {
+func (s Slice) CGoName() string {
 	return "slice_of_" + s.elem.String()
 }
 
 // NewAst produces the []ast.Decl to construct a slice type and increment it's reference count
-func (s SliceWrapper) NewAst() []ast.Decl {
+func (s Slice) NewAst() ast.Decl {
 	functionName := s.CGoName() + "_new"
 	localVarIdent := NewIdent("o")
 	goTypeIdent := NewIdent(s.GoName())
@@ -82,11 +83,11 @@ func (s SliceWrapper) NewAst() []ast.Decl {
 		},
 	}
 
-	return []ast.Decl{funcDecl}
+	return funcDecl
 }
 
 // StringAst produces the []ast.Decl to provide a string representation of the slice
-func (s SliceWrapper) StringAst() []ast.Decl {
+func (s Slice) StringAst() ast.Decl {
 	functionName := s.CGoName() + "_str"
 	selfIdent := NewIdent("self")
 	goTypeIdent := NewIdent(s.GoName())
@@ -123,10 +124,10 @@ func (s SliceWrapper) StringAst() []ast.Decl {
 		},
 	}
 
-	return []ast.Decl{funcDecl}
+	return funcDecl
 }
 
-func (s SliceWrapper) ItemAst() []ast.Decl {
+func (s Slice) ItemAst() ast.Decl {
 	functionName := s.CGoName() + "_item"
 	selfIdent := NewIdent("self")
 	indexIdent := NewIdent("i")
@@ -179,10 +180,10 @@ func (s SliceWrapper) ItemAst() []ast.Decl {
 		},
 	}
 
-	return []ast.Decl{funcDecl}
+	return funcDecl
 }
 
-func (s SliceWrapper) ItemSetAst() []ast.Decl {
+func (s Slice) ItemSetAst() ast.Decl {
 	functionName := s.CGoName() + "_item_set"
 	selfIdent := NewIdent("self")
 	indexIdent := NewIdent("i")
@@ -243,11 +244,11 @@ func (s SliceWrapper) ItemSetAst() []ast.Decl {
 		},
 	}
 
-	return []ast.Decl{funcDecl}
+	return funcDecl
 }
 
 // ItemAppendAst returns a function declaration which appends an item to the slice
-func (s SliceWrapper) ItemAppendAst() []ast.Decl {
+func (s Slice) ItemAppendAst() ast.Decl {
 	functionName := s.CGoName() + "_item_append"
 	selfIdent := NewIdent("self")
 	goTypeIdent := NewIdent(s.GoName())
@@ -301,11 +302,11 @@ func (s SliceWrapper) ItemAppendAst() []ast.Decl {
 		},
 	}
 
-	return []ast.Decl{funcDecl}
+	return funcDecl
 }
 
 // DestroyAst produces the []ast.Decl to destruct a slice type and decrement it's reference count
-func (s SliceWrapper) DestroyAst() []ast.Decl {
+func (s Slice) DestroyAst() ast.Decl {
 	functionName := s.CGoName() + "_destroy"
 	goTypeIdent := NewIdent(s.GoName())
 	target := &ast.UnaryExpr{
@@ -328,5 +329,5 @@ func (s SliceWrapper) DestroyAst() []ast.Decl {
 		},
 	}
 
-	return []ast.Decl{funcDecl}
+	return funcDecl
 }

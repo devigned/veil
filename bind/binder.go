@@ -5,9 +5,8 @@ import (
 	"go/ast"
 
 	"bufio"
+	"github.com/devigned/veil/cgo"
 	"github.com/devigned/veil/core"
-	"github.com/devigned/veil/golang"
-	"github.com/devigned/veil/golang/cgo"
 	"go/parser"
 	"go/printer"
 	"go/token"
@@ -15,7 +14,7 @@ import (
 )
 
 var (
-	registry = map[string]func(*golang.Package) Bindable{"py3": NewPy3Binder}
+	registry = map[string]func(*cgo.Package) Bindable{"py3": NewPy3Binder}
 )
 
 // Bindable is the interface for any object that will create a binding for a golang.Package
@@ -24,7 +23,7 @@ type Bindable interface {
 }
 
 // NewBinder is a factory method for creating a new binder for a given target
-func NewBinder(pkg *golang.Package, target string) (Bindable, error) {
+func NewBinder(pkg *cgo.Package, target string) (Bindable, error) {
 	bindable, ok := registry[target]
 
 	if !ok {
@@ -38,7 +37,7 @@ func NewBinder(pkg *golang.Package, target string) (Bindable, error) {
 // cgoAst generates a map of file names and io.Writers which are the cgo substrate for targets to bind.
 // The cgo layer is intended to normalize types from Go into more standard C types and provide a standard
 // layer to build FFI language bindings.
-func cgoAst(pkg *golang.Package) *ast.File {
+func cgoAst(pkg *cgo.Package) *ast.File {
 
 	//printPracticeAst()
 	declarations := []ast.Decl{

@@ -5,18 +5,18 @@ import (
 	"go/types"
 )
 
-// NamedStruct is a helpful facade over types.Named which is intended to only contain a struct
-type StructWrapper struct {
+// Struct is a helpful facade over types.Named which is intended to only contain a struct
+type Struct struct {
 	*types.Named
 }
 
 // Struct returns the underlying struct
-func (sw StructWrapper) Struct() *types.Struct {
+func (sw Struct) Struct() *types.Struct {
 	return sw.Named.Underlying().(*types.Struct)
 }
 
 // Methods returns the list of methods decorated on the struct
-func (sw StructWrapper) Methods() []*types.Func {
+func (sw Struct) Methods() []*types.Func {
 	var methods []*types.Func
 	for i := 0; i < sw.Named.NumMethods(); i++ {
 		meth := sw.Named.Method(i)
@@ -26,12 +26,12 @@ func (sw StructWrapper) Methods() []*types.Func {
 }
 
 // Underlying returns the underlying type
-func (sw StructWrapper) Underlying() types.Type { return sw.Named }
+func (sw Struct) Underlying() types.Type { return sw.Named }
 
 // Underlying returns the string representation of the type (types.Type)
-func (sw StructWrapper) String() string { return types.TypeString(sw.Named, nil) }
+func (sw Struct) String() string { return types.TypeString(sw.Named, nil) }
 
 // ToCgoAst returns the go/ast representation of the CGo wrapper of the Array type
-func (s StructWrapper) ToCgoAst() []ast.Decl {
+func (s Struct) ToCgoAst() []ast.Decl {
 	return nil
 }

@@ -3,6 +3,8 @@ package cgo
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
+	"strings"
 )
 
 // IncrementRef takes a target expression to increment it's cgo pointer ref and returns the expression
@@ -160,4 +162,73 @@ func InstanceMethodParams(selfTypeIdent *ast.Ident, fields ...*ast.Field) *ast.F
 		List: tmpFields,
 	}
 	return params
+}
+
+func FuncAst(f *Func) *ast.FuncDecl {
+	fun := f.Func
+	functionName := f.CGoName()
+	sig := fun.Type().(*types.Signature)
+	return &ast.FuncDecl{
+		Type: &ast.FuncType{
+			Params: ParamsAst(sig.Params()),
+		},
+		Name: NewIdent(functionName),
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				&ast.ExprStmt{
+					X: &ast.CallExpr{
+						Fun:  NewIdent(f.AliasedGoName()),
+						Args: ParamIdents(sig.Params()),
+					},
+				},
+			},
+		},
+	}
+}
+
+func ParamIdents(funcParams *types.Tuple) []ast.Expr {
+	if funcParams == nil || funcParams.Len() <= 0 {
+		return []ast.Expr{}
+	}
+
+	args := make([]ast.Expr, funcParams.Len())
+	for i := 0; i < funcParams.Len(); i++ {
+		args[i] = NewIdent(funcParams.At(i).Name())
+	}
+	return args
+}
+
+func ParamsAst(funcParams *types.Tuple) *ast.FieldList {
+	if funcParams == nil || funcParams.Len() <= 0 {
+		return &ast.FieldList{}
+	}
+
+	fields := make([]*ast.Field, funcParams.Len())
+	for i := 0; i < funcParams.Len(); i++ {
+		p := funcParams.At(i)
+		switch named := p.Type().(type) {
+		case *types.Named:
+			pkgAlias := PkgPathAliasFromString(p.Pkg().Path())
+			fields[i] = &ast.Field{
+				Type:  NewIdent(pkgAlias + "." + named.Obj().Name()),
+				Names: []*ast.Ident{NewIdent(p.Name())},
+			}
+		default:
+			fields[i] = &ast.Field{
+				Type:  NewIdent(p.Type().String()),
+				Names: []*ast.Ident{NewIdent(p.Name())},
+			}
+
+		}
+	}
+	return &ast.FieldList{List: fields}
+}
+
+func PkgPathAliasFromString(path string) string {
+	splits := strings.FieldsFunc(path, splitPkgPath)
+	return strings.Join(splits, "_")
+}
+
+func splitPkgPath(r rune) bool {
+	return r == '.' || r == '/'
 }
