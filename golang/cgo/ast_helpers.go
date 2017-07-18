@@ -146,3 +146,18 @@ func ExportComments(exportName string) []*ast.Comment {
 		},
 	}
 }
+
+// InstanceMethodParams returns a constructed field list for an instance method
+func InstanceMethodParams(selfTypeIdent *ast.Ident, fields ...*ast.Field) *ast.FieldList {
+	tmpFields := []*ast.Field{
+		{
+			Names: []*ast.Ident{NewIdent("self")},
+			Type:  selfTypeIdent,
+		},
+	}
+	tmpFields = append(tmpFields, fields...)
+	params := &ast.FieldList{
+		List: tmpFields,
+	}
+	return params
+}

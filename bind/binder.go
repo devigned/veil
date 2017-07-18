@@ -40,7 +40,7 @@ func NewBinder(pkg *golang.Package, target string) (Bindable, error) {
 // layer to build FFI language bindings.
 func cgoAst(pkg *golang.Package) *ast.File {
 
-	printPracticeAst()
+	//printPracticeAst()
 	declarations := []ast.Decl{
 		cgo.Imports("C"),
 		cgo.Imports("fmt", "sync", "unsafe", "strconv", "strings", "os"),
@@ -74,10 +74,9 @@ func printPracticeAst() {
 
 	import "C"
 
-func cgo_func_0x3129483107_item(self cgo_type_0x3129483107, i int) string {
+func cgo_func_0x3129483107_ass_item(self cgo_type_0x3129483107, i int, v string) {
 	arr := (*[]string)(unsafe.Pointer(self))
-	elt := (*arr)[i]
-	return elt
+	(*arr)[i] = v
 }
 }
 		`
