@@ -35,6 +35,7 @@ func (s SliceWrapper) ToCgoAst() []ast.Decl {
 	decls = append(decls, s.ItemAst()...)
 	decls = append(decls, s.ItemSetAst()...)
 	decls = append(decls, s.ItemAppendAst()...)
+	decls = append(decls, s.DestroyAst()...)
 	return decls
 }
 
@@ -133,7 +134,6 @@ func (s SliceWrapper) ItemAst() []ast.Decl {
 	goTypeIdent := NewIdent(s.GoName())
 	elementTypeIdent := NewIdent(s.elem.String())
 	itemsIdent := NewIdent("items")
-	itemIdent := NewIdent("item")
 
 	castExpression := CastUnsafePtr(DeRef(goTypeIdent), selfIdent)
 
@@ -167,23 +167,14 @@ func (s SliceWrapper) ItemAst() []ast.Decl {
 					},
 					Tok: token.DEFINE,
 				},
-				&ast.AssignStmt{
-					Lhs: []ast.Expr{
-						itemIdent,
-					},
-					Rhs: []ast.Expr{
-						&ast.IndexExpr{
-							X: &ast.ParenExpr{
-								X: &ast.StarExpr{
-									X: itemsIdent,
-								},
-							},
-							Index: indexIdent,
+				Return(&ast.IndexExpr{
+					X: &ast.ParenExpr{
+						X: &ast.StarExpr{
+							X: itemsIdent,
 						},
 					},
-					Tok: token.DEFINE,
-				},
-				Return(itemIdent),
+					Index: indexIdent,
+				}),
 			},
 		},
 	}
@@ -255,6 +246,7 @@ func (s SliceWrapper) ItemSetAst() []ast.Decl {
 	return []ast.Decl{funcDecl}
 }
 
+// ItemAppendAst returns a function declaration which appends an item to the slice
 func (s SliceWrapper) ItemAppendAst() []ast.Decl {
 	functionName := s.CGoName() + "_item_append"
 	selfIdent := NewIdent("self")
@@ -305,6 +297,33 @@ func (s SliceWrapper) ItemAppendAst() []ast.Decl {
 					},
 					Tok: token.ASSIGN,
 				},
+			},
+		},
+	}
+
+	return []ast.Decl{funcDecl}
+}
+
+// DestroyAst produces the []ast.Decl to destruct a slice type and decrement it's reference count
+func (s SliceWrapper) DestroyAst() []ast.Decl {
+	functionName := s.CGoName() + "_destroy"
+	goTypeIdent := NewIdent(s.GoName())
+	target := &ast.UnaryExpr{
+		Op: token.AND,
+		X:  NewIdent("self"),
+	}
+
+	funcDecl := &ast.FuncDecl{
+		Doc: &ast.CommentGroup{
+			List: ExportComments(functionName),
+		},
+		Name: NewIdent(functionName),
+		Type: &ast.FuncType{
+			Params: InstanceMethodParams(goTypeIdent),
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				DecrementRef(target),
 			},
 		},
 	}
