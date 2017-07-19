@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -51,10 +50,6 @@ func (g Generator) Execute() error {
 	pkg, err := cgo.NewPackage(g.PkgPath, outDir)
 	if err != nil {
 		return err
-	}
-
-	for _, t := range pkg.ExportedTypes() {
-		fmt.Println("exported: ", t)
 	}
 
 	for _, target := range g.Targets {

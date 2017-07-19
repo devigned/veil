@@ -98,13 +98,6 @@ func DeRef(expr ast.Expr) *ast.StarExpr {
 	return &ast.StarExpr{X: expr}
 }
 
-// Return takes a slice of expressions and returns a return statement containing the expressions
-func ReturnGroup(expressions []ast.Expr) *ast.ReturnStmt {
-	return &ast.ReturnStmt{
-		Results: expressions,
-	}
-}
-
 // Return takes an expression and returns a return statement containing the expression
 func Return(expression ast.Expr) *ast.ReturnStmt {
 	return &ast.ReturnStmt{
@@ -112,12 +105,6 @@ func Return(expression ast.Expr) *ast.ReturnStmt {
 			expression,
 		},
 	}
-}
-
-func ReturnCastDeref(castType, target ast.Expr) *ast.ReturnStmt {
-	castExpression := CastUnsafePtr(castType, target)
-	deRef := DeRef(castExpression)
-	return Return(deRef)
 }
 
 // FormatSprintf takes a format and a target expression and returns a fmt.Sprintf expression
@@ -169,6 +156,9 @@ func FuncAst(f *Func) *ast.FuncDecl {
 	functionName := f.CGoName()
 	sig := fun.Type().(*types.Signature)
 	return &ast.FuncDecl{
+		Doc: &ast.CommentGroup{
+			List: ExportComments(functionName),
+		},
 		Type: &ast.FuncType{
 			Params: ParamsAst(sig.Params()),
 		},

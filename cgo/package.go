@@ -23,6 +23,7 @@ type Package struct {
 	funcs            *hashset.Set
 	namedStructs     *hashset.Set
 	exportedAstables *hashset.Set
+	packageAliases   map[string]string
 }
 
 // NewPackage constructs a Package from pkgPath using the specified working directory
@@ -66,6 +67,7 @@ func NewPackage(pkgPath string, workDir string) (*Package, error) {
 		funcs:            hashset.New(),
 		namedStructs:     hashset.New(),
 		exportedAstables: hashset.New(),
+		packageAliases:   map[string]string{},
 	}
 
 	if err = veilPkg.build(); err != nil {
@@ -111,11 +113,11 @@ func (p *Package) build() error {
 	scope := p.pkg.Scope()
 	exportedObjects := collection.AsEnumerable(scope.Names()).Enumerate(nil).
 		Where(func(name interface{}) bool {
-			return scope.Lookup(name.(string)).Exported()
-		}).
+		return scope.Lookup(name.(string)).Exported()
+	}).
 		Select(func(name interface{}) interface{} {
-			return scope.Lookup(name.(string))
-		})
+		return scope.Lookup(name.(string))
+	})
 
 	for obj := range exportedObjects {
 		switch obj := obj.(type) {
@@ -151,11 +153,22 @@ func (p *Package) build() error {
 		}
 	}
 
+	for _, item := range p.exportedAstables.Values() {
+		t := item.(types.Type)
+		underlying := t.Underlying()
+		switch named := underlying.(type) {
+		case *types.Named:
+			path := named.Obj().Pkg().Path()
+			alias := PkgPathAliasFromString(path)
+			p.packageAliases[alias] = path
+		}
+	}
+
 	return nil
 }
 
 func (pkg Package) ToCgoAst() []ast.Decl {
-	decls := []ast.Decl{}
+	decls := []ast.Decl{AliasImports(pkg.packageAliases)}
 
 	for _, t := range pkg.exportedAstables.Values() {
 		transformer := t.(AstTransformer)

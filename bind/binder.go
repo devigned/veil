@@ -45,10 +45,7 @@ func cgoAst(pkg *cgo.Package) *ast.File {
 		cgo.Imports("fmt", "sync", "unsafe", "strconv", "strings", "os"),
 	}
 
-	for _, item := range pkg.ToCgoAst() {
-		declarations = append(declarations, item)
-	}
-
+	declarations = append(declarations, pkg.ToCgoAst()...)
 	declarations = append(declarations, cgo.MainFunc())
 
 	mainFile := &ast.File{
@@ -72,12 +69,9 @@ func printPracticeAst() {
 	package main
 
 	import "C"
-
-func cgo_func_0x3129483107_ass_item(self cgo_type_0x3129483107, i int, v string) {
-	arr := (*[]string)(unsafe.Pointer(self))
-	(*arr)[i] = v
-}
-}
+	import (
+		blah "go/types"
+	)
 		`
 
 	fset := token.NewFileSet() // positions are relative to fset
