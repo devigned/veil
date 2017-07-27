@@ -10,13 +10,13 @@ import (
 func Imports(imports ...string) ast.Decl {
 	objs := collection.AsEnumerable(imports).Enumerate(nil).
 		Select(func(item interface{}) interface{} {
-		return &ast.ImportSpec{
-			Path: &ast.BasicLit{
-				Kind:  token.STRING,
-				Value: "\"" + item.(string) + "\"",
-			},
-		}
-	})
+			return &ast.ImportSpec{
+				Path: &ast.BasicLit{
+					Kind:  token.STRING,
+					Value: "\"" + item.(string) + "\"",
+				},
+			}
+		})
 
 	var specs []ast.Spec
 	for item := range objs {

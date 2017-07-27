@@ -113,11 +113,11 @@ func (p *Package) build() error {
 	scope := p.pkg.Scope()
 	exportedObjects := collection.AsEnumerable(scope.Names()).Enumerate(nil).
 		Where(func(name interface{}) bool {
-		return scope.Lookup(name.(string)).Exported()
-	}).
+			return scope.Lookup(name.(string)).Exported()
+		}).
 		Select(func(name interface{}) interface{} {
-		return scope.Lookup(name.(string))
-	})
+			return scope.Lookup(name.(string))
+		})
 
 	for obj := range exportedObjects {
 		switch obj := obj.(type) {

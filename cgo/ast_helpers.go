@@ -1,6 +1,7 @@
 package cgo
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -155,25 +156,38 @@ func FuncAst(f *Func) *ast.FuncDecl {
 	fun := f.Func
 	functionName := f.CGoName()
 	sig := fun.Type().(*types.Signature)
-	return &ast.FuncDecl{
+	functionCall := &ast.CallExpr{
+		Fun:  NewIdent(f.AliasedGoName()),
+		Args: ParamIdents(sig.Params()),
+	}
+
+	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
 			List: ExportComments(functionName),
 		},
-		Type: &ast.FuncType{
-			Params: ParamsAst(sig.Params()),
-		},
 		Name: NewIdent(functionName),
-		Body: &ast.BlockStmt{
-			List: []ast.Stmt{
-				&ast.ExprStmt{
-					X: &ast.CallExpr{
-						Fun:  NewIdent(f.AliasedGoName()),
-						Args: ParamIdents(sig.Params()),
-					},
-				},
-			},
-		},
+		Body: &ast.BlockStmt{List: []ast.Stmt{}},
 	}
+
+	if sig.Results().Len() > 0 {
+		// signature will return
+		funcDecl.Body.List = append(funcDecl.Body.List, Return(functionCall))
+
+		funcDecl.Type = &ast.FuncType{
+			Params:  FieldsAst(sig.Params()),
+			Results: FieldsAst(sig.Results()),
+		}
+	} else {
+		funcDecl.Body.List = append(funcDecl.Body.List, &ast.ExprStmt{
+			X: functionCall,
+		})
+
+		funcDecl.Type = &ast.FuncType{
+			Params: FieldsAst(sig.Params()),
+		}
+	}
+
+	return funcDecl
 }
 
 func ParamIdents(funcParams *types.Tuple) []ast.Expr {
@@ -188,7 +202,7 @@ func ParamIdents(funcParams *types.Tuple) []ast.Expr {
 	return args
 }
 
-func ParamsAst(funcParams *types.Tuple) *ast.FieldList {
+func FieldsAst(funcParams *types.Tuple) *ast.FieldList {
 	if funcParams == nil || funcParams.Len() <= 0 {
 		return &ast.FieldList{}
 	}
@@ -196,22 +210,55 @@ func ParamsAst(funcParams *types.Tuple) *ast.FieldList {
 	fields := make([]*ast.Field, funcParams.Len())
 	for i := 0; i < funcParams.Len(); i++ {
 		p := funcParams.At(i)
-		switch named := p.Type().(type) {
-		case *types.Named:
-			pkgAlias := PkgPathAliasFromString(p.Pkg().Path())
-			fields[i] = &ast.Field{
-				Type:  NewIdent(pkgAlias + "." + named.Obj().Name()),
-				Names: []*ast.Ident{NewIdent(p.Name())},
-			}
+		switch t := p.Type().(type) {
+		case *types.Pointer:
+			fields[i] = VarToField(p, t.Elem())
 		default:
-			fields[i] = &ast.Field{
-				Type:  NewIdent(p.Type().String()),
-				Names: []*ast.Ident{NewIdent(p.Name())},
-			}
-
+			fields[i] = VarToField(p, t)
 		}
 	}
 	return &ast.FieldList{List: fields}
+}
+
+func VarToField(p *types.Var, t types.Type) *ast.Field {
+	switch typ := t.(type) {
+	case *types.Named:
+		return NamedToField(p, typ)
+	default:
+		name := p.Name()
+		typeName := p.Type().String()
+		return &ast.Field{
+			Type:  NewIdent(typeName),
+			Names: []*ast.Ident{NewIdent(name)},
+		}
+
+	}
+}
+
+func NamedToField(p *types.Var, named *types.Named) *ast.Field {
+	pkg := p.Pkg()
+	if pkg == nil {
+		pkg = named.Obj().Pkg()
+	}
+
+	if pkg != nil {
+		path := pkg.Path()
+		pkgAlias := PkgPathAliasFromString(path)
+		typeName := pkgAlias + "." + named.Obj().Name()
+		nameIdent := NewIdent(p.Name())
+		return &ast.Field{
+			Type:  NewIdent(typeName),
+			Names: []*ast.Ident{nameIdent},
+		}
+	} else {
+		fmt.Println(p, named)
+		typeIdnet := NewIdent(p.Type().String())
+		nameIdent := NewIdent(p.Name())
+		return &ast.Field{
+			Type:  typeIdnet,
+			Names: []*ast.Ident{nameIdent},
+		}
+	}
 }
 
 func PkgPathAliasFromString(path string) string {
