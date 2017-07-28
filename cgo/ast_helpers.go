@@ -8,13 +8,18 @@ import (
 	"strings"
 )
 
+const (
+	INCREMENT_REF_FUNC_NAME  = "__cgo_incref"
+	COBJECT_STRUCT_TYPE_NAME = "__cobject"
+)
+
 // CObjectStruct produces an AST struct which will represent a C exposed Object
 func CObjectStruct() ast.Decl {
 	return &ast.GenDecl{
 		Tok: token.TYPE,
 		Specs: []ast.Spec{
 			&ast.TypeSpec{
-				Name: NewIdent("cobject"),
+				Name: NewIdent(COBJECT_STRUCT_TYPE_NAME),
 				Type: &ast.StructType{
 					Fields: &ast.FieldList{
 						List: []*ast.Field{
@@ -82,8 +87,218 @@ func RefsStruct() ast.Decl {
 	}
 }
 
-// IncrementRef takes a target expression to increment it's cgo pointer ref and returns the expression
-func IncrementRef(target ast.Expr) *ast.ExprStmt {
+func IncrementRef() ast.Decl {
+	ptr := NewIdent("ptr")
+	refs := NewIdent("refs")
+	num := NewIdent("num")
+	ok := NewIdent("ok")
+	s := NewIdent("s")
+	ptrs := NewIdent("ptrs")
+	next := NewIdent("next")
+
+	return &ast.FuncDecl{
+		Doc:  &ast.CommentGroup{List: ExportComments(INCREMENT_REF_FUNC_NAME)},
+		Name: NewIdent(INCREMENT_REF_FUNC_NAME),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{
+				List: []*ast.Field{
+					{
+						Names: []*ast.Ident{ptr},
+						Type: &ast.SelectorExpr{
+							X:   NewIdent("unsafe"),
+							Sel: NewIdent("Pointer"),
+						},
+					},
+				},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				// refs.Lock()
+				&ast.ExprStmt{
+					X: &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   refs,
+							Sel: NewIdent("Lock"),
+						},
+					},
+				},
+				// num, ok := refs.refs[ptr]
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						num,
+						ok,
+					},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{
+						&ast.IndexExpr{
+							X: &ast.SelectorExpr{
+								X:   refs,
+								Sel: refs,
+							},
+							Index: ptr,
+						},
+					},
+				},
+				// if ok {
+				&ast.IfStmt{
+					Cond: ok,
+					Body: &ast.BlockStmt{
+						List: []ast.Stmt{
+							// s := refs.ptrs[num]
+							&ast.AssignStmt{
+								Lhs: []ast.Expr{s},
+								Tok: token.DEFINE,
+								Rhs: []ast.Expr{
+									&ast.IndexExpr{
+										X: &ast.SelectorExpr{
+											X:   refs,
+											Sel: ptrs,
+										},
+										Index: num,
+									},
+								},
+							},
+							// refs.ptrs[num] = cobjects{s.ptr, s.cnt + 1}
+							&ast.AssignStmt{
+								Lhs: []ast.Expr{
+									&ast.IndexExpr{
+										X: &ast.SelectorExpr{
+											X:   refs,
+											Sel: ptrs,
+										},
+										Index: num,
+									},
+								},
+								Tok: token.EQL,
+								Rhs: []ast.Expr{
+									&ast.CompositeLit{
+										Type: NewIdent(COBJECT_STRUCT_TYPE_NAME),
+										Elts: []ast.Expr{
+											&ast.SelectorExpr{
+												X:   s,
+												Sel: ptr,
+											},
+											&ast.BinaryExpr{
+												X: &ast.SelectorExpr{
+													X:   s,
+													Sel: NewIdent("cnt"),
+												},
+												Op: token.ADD,
+												Y:  &ast.BasicLit{Value: "1", Kind: token.INT},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					// } else {
+					Else: &ast.BlockStmt{
+						List: []ast.Stmt{
+							// num = refs.next
+							&ast.AssignStmt{
+								Lhs: []ast.Expr{
+									num,
+								},
+								Tok: token.EQL,
+								Rhs: []ast.Expr{
+									&ast.SelectorExpr{
+										X:   refs,
+										Sel: next,
+									},
+								},
+							},
+							// refs.next--
+							&ast.IncDecStmt{
+								X: &ast.SelectorExpr{
+									X:   refs,
+									Sel: next,
+								},
+								Tok: token.DEC,
+							},
+							// if refs.next > 0 {
+							&ast.IfStmt{
+								Cond: &ast.BinaryExpr{
+									X: &ast.SelectorExpr{
+										X:   refs,
+										Sel: next,
+									},
+									Op: token.LSS,
+									Y:  &ast.BasicLit{Value: "0", Kind: token.INT},
+								},
+								Body: &ast.BlockStmt{
+									List: []ast.Stmt{
+										// panic("refs.next underflow")
+										&ast.ExprStmt{
+											X: &ast.CallExpr{
+												Fun: NewIdent("panic"),
+												Args: []ast.Expr{
+													&ast.BasicLit{Value: "refs.next underflow", Kind: token.STRING},
+												},
+											},
+										},
+									},
+								},
+							},
+							// }
+							// refs.refs[ptr] = num
+							&ast.AssignStmt{
+								Lhs: []ast.Expr{
+									&ast.IndexExpr{
+										X: &ast.SelectorExpr{
+											X:   refs,
+											Sel: refs,
+										},
+										Index: ptr,
+									},
+								},
+								Tok: token.ASSIGN,
+								Rhs: []ast.Expr{
+									num,
+								},
+							},
+							// refs.ptrs[num] = cobject{ptr, 1}
+							&ast.AssignStmt{
+								Lhs: []ast.Expr{
+									&ast.IndexExpr{
+										X: &ast.SelectorExpr{
+											X:   refs,
+											Sel: ptrs,
+										},
+										Index: num,
+									},
+								},
+								Tok: token.ASSIGN,
+								Rhs: []ast.Expr{
+									&ast.CompositeLit{
+										Type: NewIdent(COBJECT_STRUCT_TYPE_NAME),
+										Elts: []ast.Expr{
+											ptr,
+											&ast.BasicLit{Value: "1", Kind: token.INT},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				// refs.Unlock()
+				&ast.ExprStmt{
+					X: &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   refs,
+							Sel: NewIdent("Unlock"),
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// IncrementRefCall takes a target expression to increment it's cgo pointer ref and returns the expression
+func IncrementRefCall(target ast.Expr) *ast.ExprStmt {
 	return &ast.ExprStmt{
 		X: &ast.CallExpr{
 			Fun: NewIdent("cgo_incref"),
@@ -99,8 +314,8 @@ func IncrementRef(target ast.Expr) *ast.ExprStmt {
 	}
 }
 
-// IncrementRef takes a target expression to decrement it's cgo pointer ref and returns the expression
-func DecrementRef(target ast.Expr) *ast.ExprStmt {
+// DecrementRefCall takes a target expression to decrement it's cgo pointer ref and returns the expression
+func DecrementRefCall(target ast.Expr) *ast.ExprStmt {
 	return &ast.ExprStmt{
 		X: &ast.CallExpr{
 			Fun: NewIdent("cgo_decref"),

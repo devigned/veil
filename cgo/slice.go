@@ -77,7 +77,7 @@ func (s Slice) NewAst() ast.Decl {
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
 				DeclareVar(localVarIdent, goType),
-				IncrementRef(target),
+				IncrementRefCall(target),
 				CastReturn(goTypeIdent, target),
 			},
 		},
@@ -324,7 +324,7 @@ func (s Slice) DestroyAst() ast.Decl {
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
-				DecrementRef(target),
+				DecrementRefCall(target),
 			},
 		},
 	}
