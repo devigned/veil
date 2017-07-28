@@ -5,5 +5,5 @@ import (
 )
 
 type AstTransformer interface {
-	ToCgoAst() []ast.Decl
+	ToAst() []ast.Decl
 }

@@ -11,27 +11,27 @@ type Struct struct {
 }
 
 // Struct returns the underlying struct
-func (sw Struct) Struct() *types.Struct {
-	return sw.Named.Underlying().(*types.Struct)
+func (s Struct) Struct() *types.Struct {
+	return s.Named.Underlying().(*types.Struct)
 }
 
 // Methods returns the list of methods decorated on the struct
-func (sw Struct) Methods() []*types.Func {
+func (s Struct) Methods() []*types.Func {
 	var methods []*types.Func
-	for i := 0; i < sw.Named.NumMethods(); i++ {
-		meth := sw.Named.Method(i)
+	for i := 0; i < s.Named.NumMethods(); i++ {
+		meth := s.Named.Method(i)
 		methods = append(methods, meth)
 	}
 	return methods
 }
 
 // Underlying returns the underlying type
-func (sw Struct) Underlying() types.Type { return sw.Named }
+func (s Struct) Underlying() types.Type { return s.Named }
 
 // Underlying returns the string representation of the type (types.Type)
-func (sw Struct) String() string { return types.TypeString(sw.Named, nil) }
+func (s Struct) String() string { return types.TypeString(s.Named, nil) }
 
-// ToCgoAst returns the go/ast representation of the CGo wrapper of the Array type
-func (s Struct) ToCgoAst() []ast.Decl {
+// ToAst returns the go/ast representation of the CGo wrapper of the Array type
+func (s Struct) ToAst() []ast.Decl {
 	return nil
 }

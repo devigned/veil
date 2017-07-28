@@ -8,10 +8,11 @@ import (
 )
 
 const (
-	INCREMENT_REF_FUNC_NAME  = "__cgo_incref"
-	DECREMENT_REF_FUNC_NAME  = "__cgo_decref"
-	COBJECT_STRUCT_TYPE_NAME = "__cobject"
-	REFS_STRUCT_TYPE_NAME    = "__refs"
+	INCREMENT_REF_FUNC_NAME  = "cgo_incref"
+	DECREMENT_REF_FUNC_NAME  = "cgo_decref"
+	COBJECT_STRUCT_TYPE_NAME = "cobject"
+	REFS_VAR_NAME            = "refs"
+	REFS_STRUCT_FIELD_NAME   = "refs"
 )
 
 // CObjectStruct produces an AST struct which will represent a C exposed Object
@@ -46,10 +47,10 @@ func CObjectStruct() ast.Decl {
 // RefsStruct produces an AST struct which will keep track of references to pointers used by the host CFFI
 func RefsStruct() ast.Decl {
 	return &ast.GenDecl{
-		Tok: token.TYPE,
+		Tok: token.VAR,
 		Specs: []ast.Spec{
 			&ast.TypeSpec{
-				Name: NewIdent(REFS_STRUCT_TYPE_NAME),
+				Name: NewIdent(REFS_VAR_NAME),
 				Type: &ast.StructType{
 					Fields: &ast.FieldList{
 						List: []*ast.Field{
@@ -64,7 +65,7 @@ func RefsStruct() ast.Decl {
 								Type:  NewIdent("int32"),
 							},
 							{
-								Names: []*ast.Ident{NewIdent("refs")},
+								Names: []*ast.Ident{NewIdent(REFS_STRUCT_FIELD_NAME)},
 								Type: &ast.MapType{
 									Key: &ast.SelectorExpr{
 										X:   NewIdent("unsafe"),
@@ -77,7 +78,7 @@ func RefsStruct() ast.Decl {
 								Names: []*ast.Ident{NewIdent("ptrs")},
 								Type: &ast.MapType{
 									Key:   NewIdent("int32"),
-									Value: NewIdent("cobject"),
+									Value: NewIdent(COBJECT_STRUCT_TYPE_NAME),
 								},
 							},
 						},
@@ -90,8 +91,8 @@ func RefsStruct() ast.Decl {
 
 func DecrementRef() ast.Decl {
 	ptr := NewIdent("ptr")
-	refsType := NewIdent(REFS_STRUCT_TYPE_NAME)
-	refsField := NewIdent("refs")
+	refsType := NewIdent(REFS_VAR_NAME)
+	refsField := NewIdent(REFS_STRUCT_FIELD_NAME)
 	num := NewIdent("num")
 	ok := NewIdent("ok")
 	s := NewIdent("s")
@@ -157,7 +158,7 @@ func DecrementRef() ast.Decl {
 								X: &ast.CallExpr{
 									Fun: NewIdent("panic"),
 									Args: []ast.Expr{
-										&ast.BasicLit{Value: "decref untracked object!", Kind: token.STRING},
+										&ast.BasicLit{Value: "\"decref untracked object!\"", Kind: token.STRING},
 									},
 								},
 							},
@@ -235,7 +236,7 @@ func DecrementRef() ast.Decl {
 					},
 				},
 				// }
-				// refs.ptrs[num] = cobjects{s.ptr, s.cnt - 1}
+				// refs.ptrs[num] = __cobjects{s.ptr, s.cnt - 1}
 				&ast.AssignStmt{
 					Lhs: []ast.Expr{
 						&ast.IndexExpr{
@@ -246,7 +247,7 @@ func DecrementRef() ast.Decl {
 							Index: num,
 						},
 					},
-					Tok: token.EQL,
+					Tok: token.ASSIGN,
 					Rhs: []ast.Expr{
 						&ast.CompositeLit{
 							Type: NewIdent(COBJECT_STRUCT_TYPE_NAME),
@@ -283,8 +284,8 @@ func DecrementRef() ast.Decl {
 
 func IncrementRef() ast.Decl {
 	ptr := NewIdent("ptr")
-	refsType := NewIdent(REFS_STRUCT_TYPE_NAME)
-	refsField := NewIdent("refs")
+	refsType := NewIdent(REFS_VAR_NAME)
+	refsField := NewIdent(REFS_STRUCT_FIELD_NAME)
 	num := NewIdent("num")
 	ok := NewIdent("ok")
 	s := NewIdent("s")
@@ -366,7 +367,7 @@ func IncrementRef() ast.Decl {
 										Index: num,
 									},
 								},
-								Tok: token.EQL,
+								Tok: token.ASSIGN,
 								Rhs: []ast.Expr{
 									&ast.CompositeLit{
 										Type: NewIdent(COBJECT_STRUCT_TYPE_NAME),
@@ -397,7 +398,7 @@ func IncrementRef() ast.Decl {
 								Lhs: []ast.Expr{
 									num,
 								},
-								Tok: token.EQL,
+								Tok: token.ASSIGN,
 								Rhs: []ast.Expr{
 									&ast.SelectorExpr{
 										X:   refsType,
@@ -430,7 +431,7 @@ func IncrementRef() ast.Decl {
 											X: &ast.CallExpr{
 												Fun: NewIdent("panic"),
 												Args: []ast.Expr{
-													&ast.BasicLit{Value: "refs.next underflow", Kind: token.STRING},
+													&ast.BasicLit{Value: "\"refs.next underflow\"", Kind: token.STRING},
 												},
 											},
 										},
@@ -454,7 +455,7 @@ func IncrementRef() ast.Decl {
 									num,
 								},
 							},
-							// refs.ptrs[num] = cobject{ptr, 1}
+							// refs.ptrs[num] = __cobject{ptr, 1}
 							&ast.AssignStmt{
 								Lhs: []ast.Expr{
 									&ast.IndexExpr{
@@ -497,7 +498,7 @@ func IncrementRef() ast.Decl {
 func IncrementRefCall(target ast.Expr) *ast.ExprStmt {
 	return &ast.ExprStmt{
 		X: &ast.CallExpr{
-			Fun: NewIdent("cgo_incref"),
+			Fun: NewIdent(INCREMENT_REF_FUNC_NAME),
 			Args: []ast.Expr{
 				&ast.CallExpr{
 					Fun: UnsafePtrSelector(),
@@ -514,7 +515,7 @@ func IncrementRefCall(target ast.Expr) *ast.ExprStmt {
 func DecrementRefCall(target ast.Expr) *ast.ExprStmt {
 	return &ast.ExprStmt{
 		X: &ast.CallExpr{
-			Fun: NewIdent("cgo_decref"),
+			Fun: NewIdent(DECREMENT_REF_FUNC_NAME),
 			Args: []ast.Expr{
 				&ast.CallExpr{
 					Fun: UnsafePtrSelector(),

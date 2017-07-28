@@ -42,14 +42,15 @@ func cgoAst(pkg *cgo.Package) *ast.File {
 	// printPracticeAst()
 	declarations := []ast.Decl{
 		cgo.Imports("C"),
-		cgo.Imports("fmt", "sync", "unsafe", "strconv", "strings", "os"),
+		cgo.Imports("fmt", "sync", "unsafe"), //, "strconv", "strings", "os"
+		cgo.ImportsFromMap(pkg.ImportAliases()),
 		cgo.RefsStruct(),
 		cgo.CObjectStruct(),
 		cgo.DecrementRef(),
 		cgo.IncrementRef(),
 	}
 
-	declarations = append(declarations, pkg.ToCgoAst()...)
+	declarations = append(declarations, pkg.ToAst()...)
 	declarations = append(declarations, cgo.MainFunc())
 
 	mainFile := &ast.File{

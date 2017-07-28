@@ -19,17 +19,17 @@ func NewSlice(elem types.Type) Slice {
 }
 
 // Underlying returns the underlying type of the Slice (types.Type)
-func (t Slice) Underlying() types.Type {
-	return t
+func (s Slice) Underlying() types.Type {
+	return s
 }
 
 // Underlying returns the string representation of the type (types.Type)
-func (t Slice) String() string {
-	return types.TypeString(types.NewSlice(t.elem), nil)
+func (s Slice) String() string {
+	return types.TypeString(types.NewSlice(s.elem), nil)
 }
 
-// ToCgoAst returns the go/ast representation of the CGo wrapper of the Slice type
-func (s Slice) ToCgoAst() []ast.Decl {
+// ToAst returns the go/ast representation of the CGo wrapper of the Slice type
+func (s Slice) ToAst() []ast.Decl {
 	return []ast.Decl{
 		s.NewAst(),
 		s.StringAst(),

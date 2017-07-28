@@ -33,7 +33,8 @@ func Imports(imports ...string) ast.Decl {
 	return decl
 }
 
-func AliasImports(imports map[string]string) ast.Decl {
+// ImportsFromMap create import ASTs from alias keys and package path values
+func ImportsFromMap(imports map[string]string) ast.Decl {
 	specs := []ast.Spec{}
 
 	for k, v := range imports {

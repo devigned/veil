@@ -12,13 +12,13 @@ type Func struct {
 }
 
 // Underlying returns the underlying type
-func (t Func) Underlying() types.Type {
-	return t.Func.Type()
+func (f Func) Underlying() types.Type {
+	return f.Func.Type()
 }
 
 // Underlying returns the string representation of the type (types.Type)
-func (t Func) String() string {
-	return t.Func.FullName() + ": " + types.TypeString(t.Underlying(), nil)
+func (f Func) String() string {
+	return f.Func.FullName() + ": " + types.TypeString(f.Underlying(), nil)
 }
 
 func MainFunc() *ast.FuncDecl {
@@ -31,8 +31,8 @@ func MainFunc() *ast.FuncDecl {
 	}
 }
 
-// ToCgoAst returns the go/ast representation of the CGo wrapper of the Func type
-func (f Func) ToCgoAst() []ast.Decl {
+// ToAst returns the go/ast representation of the CGo wrapper of the Func type
+func (f Func) ToAst() []ast.Decl {
 	return []ast.Decl{
 		FuncAst(&f),
 	}
