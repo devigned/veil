@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// CObjectStruct produces an AST struct which will represent a C exposed Object
 func CObjectStruct() ast.Decl {
 	return &ast.GenDecl{
 		Tok: token.TYPE,
@@ -36,6 +37,7 @@ func CObjectStruct() ast.Decl {
 	}
 }
 
+// RefsStruct produces an AST struct which will keep track of references to pointers used by the host CFFI
 func RefsStruct() ast.Decl {
 	return &ast.GenDecl{
 		Tok: token.TYPE,
@@ -224,6 +226,7 @@ func InstanceMethodParams(selfTypeIdent *ast.Ident, fields ...*ast.Field) *ast.F
 	return params
 }
 
+// FuncAst returns an FuncDecl which wraps the func
 func FuncAst(f *Func) *ast.FuncDecl {
 	fun := f.Func
 	functionName := f.CGoName()
@@ -246,8 +249,8 @@ func FuncAst(f *Func) *ast.FuncDecl {
 		funcDecl.Body.List = append(funcDecl.Body.List, Return(functionCall))
 
 		funcDecl.Type = &ast.FuncType{
-			Params:  FieldsAst(sig.Params()),
-			Results: FieldsAst(sig.Results()),
+			Params:  Fields(sig.Params()),
+			Results: Fields(sig.Results()),
 		}
 	} else {
 		funcDecl.Body.List = append(funcDecl.Body.List, &ast.ExprStmt{
@@ -255,13 +258,14 @@ func FuncAst(f *Func) *ast.FuncDecl {
 		})
 
 		funcDecl.Type = &ast.FuncType{
-			Params: FieldsAst(sig.Params()),
+			Params: Fields(sig.Params()),
 		}
 	}
 
 	return funcDecl
 }
 
+// ParamIdents transforms parameter tuples into a slice of AST expressions
 func ParamIdents(funcParams *types.Tuple) []ast.Expr {
 	if funcParams == nil || funcParams.Len() <= 0 {
 		return []ast.Expr{}
@@ -274,7 +278,8 @@ func ParamIdents(funcParams *types.Tuple) []ast.Expr {
 	return args
 }
 
-func FieldsAst(funcParams *types.Tuple) *ast.FieldList {
+// Fields transforms parameters into a list of AST fields
+func Fields(funcParams *types.Tuple) *ast.FieldList {
 	if funcParams == nil || funcParams.Len() <= 0 {
 		return &ast.FieldList{}
 	}
@@ -292,6 +297,7 @@ func FieldsAst(funcParams *types.Tuple) *ast.FieldList {
 	return &ast.FieldList{List: fields}
 }
 
+// VarToField transforms a Var into an AST field
 func VarToField(p *types.Var, t types.Type) *ast.Field {
 	switch typ := t.(type) {
 	case *types.Named:
@@ -307,6 +313,7 @@ func VarToField(p *types.Var, t types.Type) *ast.Field {
 	}
 }
 
+// NameToField transforms a Var that's a Named type into an AST Field
 func NamedToField(p *types.Var, named *types.Named) *ast.Field {
 	pkg := p.Pkg()
 	if pkg == nil {
@@ -333,6 +340,7 @@ func NamedToField(p *types.Var, named *types.Named) *ast.Field {
 	}
 }
 
+// PkgPathAliasFromString takes a golang path as a string and returns an import alias for that path
 func PkgPathAliasFromString(path string) string {
 	splits := strings.FieldsFunc(path, splitPkgPath)
 	return strings.Join(splits, "_")
