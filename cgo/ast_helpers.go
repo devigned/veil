@@ -8,6 +8,78 @@ import (
 	"strings"
 )
 
+func CObjectStruct() ast.Decl {
+	return &ast.GenDecl{
+		Tok: token.TYPE,
+		Specs: []ast.Spec {
+			&ast.TypeSpec{
+				Name: NewIdent("cobject"),
+				Type: &ast.StructType{
+					Fields: &ast.FieldList {
+						List: []*ast.Field {
+							{
+								Names: []*ast.Ident{NewIdent("ptr")},
+								Type: &ast.SelectorExpr{
+									X: NewIdent("unsafe"),
+									Sel: NewIdent("Pointer"),
+								},
+							},
+							{
+								Names: []*ast.Ident{NewIdent("cnt")},
+								Type: NewIdent("int32"),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func RefsStruct() ast.Decl {
+	return &ast.GenDecl{
+		Tok: token.TYPE,
+		Specs: []ast.Spec {
+			&ast.TypeSpec{
+				Name: NewIdent("refs"),
+				Type: &ast.StructType{
+					Fields: &ast.FieldList {
+						List: []*ast.Field {
+							{
+								Type: &ast.SelectorExpr{
+									X: NewIdent("sync"),
+									Sel: NewIdent("Mutex"),
+								},
+							},
+							{
+								Names: []*ast.Ident{NewIdent("next")},
+								Type: NewIdent("int32"),
+							},
+							{
+								Names: []*ast.Ident{NewIdent("refs")},
+								Type: &ast.MapType{
+									Key: &ast.SelectorExpr{
+										X: NewIdent("unsafe"),
+										Sel: NewIdent("Pointer"),
+									},
+									Value: NewIdent("int32"),
+								},
+							},
+							{
+								Names: []*ast.Ident{NewIdent("ptrs")},
+								Type: &ast.MapType{
+									Key: NewIdent("int32"),
+									Value: NewIdent("cobject"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 // IncrementRef takes a target expression to increment it's cgo pointer ref and returns the expression
 func IncrementRef(target ast.Expr) *ast.ExprStmt {
 	return &ast.ExprStmt{

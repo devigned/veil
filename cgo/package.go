@@ -167,10 +167,11 @@ func (p *Package) build() error {
 	return nil
 }
 
-func (pkg Package) ToCgoAst() []ast.Decl {
-	decls := []ast.Decl{AliasImports(pkg.packageAliases)}
+func (p Package) ToCgoAst() []ast.Decl {
+	decls := []ast.Decl{AliasImports(p.packageAliases)}
+	decls = append(decls, CObjectStruct(), RefsStruct())
 
-	for _, t := range pkg.exportedAstables.Values() {
+	for _, t := range p.exportedAstables.Values() {
 		transformer := t.(AstTransformer)
 		for _, d := range transformer.ToCgoAst() {
 			decls = append(decls, d)

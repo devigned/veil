@@ -39,7 +39,7 @@ func NewBinder(pkg *cgo.Package, target string) (Bindable, error) {
 // layer to build FFI language bindings.
 func cgoAst(pkg *cgo.Package) *ast.File {
 
-	//printPracticeAst()
+	printPracticeAst()
 	declarations := []ast.Decl{
 		cgo.Imports("C"),
 		cgo.Imports("fmt", "sync", "unsafe", "strconv", "strings", "os"),
@@ -68,10 +68,6 @@ func printPracticeAst() {
 
 	package main
 
-	import "C"
-	import (
-		blah "go/types"
-	)
 		`
 
 	fset := token.NewFileSet() // positions are relative to fset
