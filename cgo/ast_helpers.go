@@ -1,7 +1,6 @@
 package cgo
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -10,7 +9,9 @@ import (
 
 const (
 	INCREMENT_REF_FUNC_NAME  = "__cgo_incref"
+	DECREMENT_REF_FUNC_NAME  = "__cgo_decref"
 	COBJECT_STRUCT_TYPE_NAME = "__cobject"
+	REFS_STRUCT_TYPE_NAME    = "__refs"
 )
 
 // CObjectStruct produces an AST struct which will represent a C exposed Object
@@ -48,7 +49,7 @@ func RefsStruct() ast.Decl {
 		Tok: token.TYPE,
 		Specs: []ast.Spec{
 			&ast.TypeSpec{
-				Name: NewIdent("refs"),
+				Name: NewIdent(REFS_STRUCT_TYPE_NAME),
 				Type: &ast.StructType{
 					Fields: &ast.FieldList{
 						List: []*ast.Field{
@@ -87,14 +88,209 @@ func RefsStruct() ast.Decl {
 	}
 }
 
+func DecrementRef() ast.Decl {
+	ptr := NewIdent("ptr")
+	refsType := NewIdent(REFS_STRUCT_TYPE_NAME)
+	refsField := NewIdent("refs")
+	num := NewIdent("num")
+	ok := NewIdent("ok")
+	s := NewIdent("s")
+	ptrs := NewIdent("ptrs")
+	cnt := NewIdent("cnt")
+	del := NewIdent("delete")
+	unlock := NewIdent("Unlock")
+
+	return &ast.FuncDecl{
+		Doc:  &ast.CommentGroup{List: ExportComments(DECREMENT_REF_FUNC_NAME)},
+		Name: NewIdent(DECREMENT_REF_FUNC_NAME),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{
+				List: []*ast.Field{
+					{
+						Names: []*ast.Ident{ptr},
+						Type: &ast.SelectorExpr{
+							X:   NewIdent("unsafe"),
+							Sel: NewIdent("Pointer"),
+						},
+					},
+				},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				// refs.Lock()
+				&ast.ExprStmt{
+					X: &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   refsType,
+							Sel: NewIdent("Lock"),
+						},
+					},
+				},
+				// num, ok := refs.refs[ptr]
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						num,
+						ok,
+					},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{
+						&ast.IndexExpr{
+							X: &ast.SelectorExpr{
+								X:   refsType,
+								Sel: refsField,
+							},
+							Index: ptr,
+						},
+					},
+				},
+				// if !ok {
+				&ast.IfStmt{
+					Cond: &ast.UnaryExpr{
+						Op: token.NOT,
+						X:  ok,
+					},
+					Body: &ast.BlockStmt{
+						List: []ast.Stmt{
+							// panic("decref untracted object")
+							&ast.ExprStmt{
+								X: &ast.CallExpr{
+									Fun: NewIdent("panic"),
+									Args: []ast.Expr{
+										&ast.BasicLit{Value: "decref untracked object!", Kind: token.STRING},
+									},
+								},
+							},
+						},
+					},
+				},
+				// }
+				// s := refs.ptrs[num]
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{s},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{
+						&ast.IndexExpr{
+							X: &ast.SelectorExpr{
+								X:   refsType,
+								Sel: ptrs,
+							},
+							Index: num,
+						},
+					},
+				},
+				// if s.cnt -1 <= 0 {
+				&ast.IfStmt{
+					Cond: &ast.BinaryExpr{
+						X: &ast.BinaryExpr{
+							X: &ast.SelectorExpr{
+								X:   s,
+								Sel: cnt,
+							},
+							Op: token.SUB,
+							Y:  &ast.BasicLit{Value: "1", Kind: token.INT},
+						},
+						Op: token.LEQ,
+						Y:  &ast.BasicLit{Value: "0", Kind: token.INT},
+					},
+					Body: &ast.BlockStmt{
+						List: []ast.Stmt{
+							// delete(refs.ptrs, num)
+							&ast.ExprStmt{
+								X: &ast.CallExpr{
+									Fun: del,
+									Args: []ast.Expr{
+										&ast.SelectorExpr{
+											X:   refsType,
+											Sel: ptrs,
+										},
+										num,
+									},
+								},
+							},
+							// delete(refs.refs, ptr)
+							&ast.ExprStmt{
+								X: &ast.CallExpr{
+									Fun: del,
+									Args: []ast.Expr{
+										&ast.SelectorExpr{
+											X:   refsType,
+											Sel: refsField,
+										},
+										ptr,
+									},
+								},
+							},
+							// refs.Unlock()
+							&ast.ExprStmt{
+								X: &ast.CallExpr{
+									Fun: &ast.SelectorExpr{
+										X:   refsType,
+										Sel: unlock,
+									},
+								},
+							},
+							&ast.ReturnStmt{},
+						},
+					},
+				},
+				// }
+				// refs.ptrs[num] = cobjects{s.ptr, s.cnt - 1}
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						&ast.IndexExpr{
+							X: &ast.SelectorExpr{
+								X:   refsType,
+								Sel: ptrs,
+							},
+							Index: num,
+						},
+					},
+					Tok: token.EQL,
+					Rhs: []ast.Expr{
+						&ast.CompositeLit{
+							Type: NewIdent(COBJECT_STRUCT_TYPE_NAME),
+							Elts: []ast.Expr{
+								&ast.SelectorExpr{
+									X:   s,
+									Sel: ptr,
+								},
+								&ast.BinaryExpr{
+									X: &ast.SelectorExpr{
+										X:   s,
+										Sel: NewIdent("cnt"),
+									},
+									Op: token.SUB,
+									Y:  &ast.BasicLit{Value: "1", Kind: token.INT},
+								},
+							},
+						},
+					},
+				},
+				// refs.Unlock()
+				&ast.ExprStmt{
+					X: &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   refsType,
+							Sel: unlock,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func IncrementRef() ast.Decl {
 	ptr := NewIdent("ptr")
-	refs := NewIdent("refs")
+	refsType := NewIdent(REFS_STRUCT_TYPE_NAME)
+	refsField := NewIdent("refs")
 	num := NewIdent("num")
 	ok := NewIdent("ok")
 	s := NewIdent("s")
 	ptrs := NewIdent("ptrs")
 	next := NewIdent("next")
+	unlock := NewIdent("Unlock")
 
 	return &ast.FuncDecl{
 		Doc:  &ast.CommentGroup{List: ExportComments(INCREMENT_REF_FUNC_NAME)},
@@ -118,7 +314,7 @@ func IncrementRef() ast.Decl {
 				&ast.ExprStmt{
 					X: &ast.CallExpr{
 						Fun: &ast.SelectorExpr{
-							X:   refs,
+							X:   refsType,
 							Sel: NewIdent("Lock"),
 						},
 					},
@@ -133,8 +329,8 @@ func IncrementRef() ast.Decl {
 					Rhs: []ast.Expr{
 						&ast.IndexExpr{
 							X: &ast.SelectorExpr{
-								X:   refs,
-								Sel: refs,
+								X:   refsType,
+								Sel: refsField,
 							},
 							Index: ptr,
 						},
@@ -152,7 +348,7 @@ func IncrementRef() ast.Decl {
 								Rhs: []ast.Expr{
 									&ast.IndexExpr{
 										X: &ast.SelectorExpr{
-											X:   refs,
+											X:   refsType,
 											Sel: ptrs,
 										},
 										Index: num,
@@ -164,7 +360,7 @@ func IncrementRef() ast.Decl {
 								Lhs: []ast.Expr{
 									&ast.IndexExpr{
 										X: &ast.SelectorExpr{
-											X:   refs,
+											X:   refsType,
 											Sel: ptrs,
 										},
 										Index: num,
@@ -204,7 +400,7 @@ func IncrementRef() ast.Decl {
 								Tok: token.EQL,
 								Rhs: []ast.Expr{
 									&ast.SelectorExpr{
-										X:   refs,
+										X:   refsType,
 										Sel: next,
 									},
 								},
@@ -212,7 +408,7 @@ func IncrementRef() ast.Decl {
 							// refs.next--
 							&ast.IncDecStmt{
 								X: &ast.SelectorExpr{
-									X:   refs,
+									X:   refsType,
 									Sel: next,
 								},
 								Tok: token.DEC,
@@ -221,7 +417,7 @@ func IncrementRef() ast.Decl {
 							&ast.IfStmt{
 								Cond: &ast.BinaryExpr{
 									X: &ast.SelectorExpr{
-										X:   refs,
+										X:   refsType,
 										Sel: next,
 									},
 									Op: token.LSS,
@@ -247,8 +443,8 @@ func IncrementRef() ast.Decl {
 								Lhs: []ast.Expr{
 									&ast.IndexExpr{
 										X: &ast.SelectorExpr{
-											X:   refs,
-											Sel: refs,
+											X:   refsType,
+											Sel: refsField,
 										},
 										Index: ptr,
 									},
@@ -263,7 +459,7 @@ func IncrementRef() ast.Decl {
 								Lhs: []ast.Expr{
 									&ast.IndexExpr{
 										X: &ast.SelectorExpr{
-											X:   refs,
+											X:   refsType,
 											Sel: ptrs,
 										},
 										Index: num,
@@ -287,8 +483,8 @@ func IncrementRef() ast.Decl {
 				&ast.ExprStmt{
 					X: &ast.CallExpr{
 						Fun: &ast.SelectorExpr{
-							X:   refs,
-							Sel: NewIdent("Unlock"),
+							X:   refsType,
+							Sel: unlock,
 						},
 					},
 				},
@@ -545,7 +741,6 @@ func NamedToField(p *types.Var, named *types.Named) *ast.Field {
 			Names: []*ast.Ident{nameIdent},
 		}
 	} else {
-		fmt.Println(p, named)
 		typeIdnet := NewIdent(p.Type().String())
 		nameIdent := NewIdent(p.Name())
 		return &ast.Field{
