@@ -15,6 +15,13 @@ const (
 	REFS_STRUCT_FIELD_NAME   = "refs"
 )
 
+var (
+	unsafePointer = &ast.SelectorExpr{
+		X:   NewIdent("unsafe"),
+		Sel: NewIdent("Pointer"),
+	}
+)
+
 // CObjectStruct produces an AST struct which will represent a C exposed Object
 func CObjectStruct() ast.Decl {
 	return &ast.GenDecl{
@@ -494,19 +501,21 @@ func IncrementRef() ast.Decl {
 	}
 }
 
+func UnsafePointerToTarget(target ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun: unsafePointer,
+		Args: []ast.Expr{
+			target,
+		},
+	}
+}
+
 // IncrementRefCall takes a target expression to increment it's cgo pointer ref and returns the expression
 func IncrementRefCall(target ast.Expr) *ast.ExprStmt {
 	return &ast.ExprStmt{
 		X: &ast.CallExpr{
-			Fun: NewIdent(INCREMENT_REF_FUNC_NAME),
-			Args: []ast.Expr{
-				&ast.CallExpr{
-					Fun: UnsafePtrSelector(),
-					Args: []ast.Expr{
-						target,
-					},
-				},
-			},
+			Fun:  NewIdent(INCREMENT_REF_FUNC_NAME),
+			Args: []ast.Expr{UnsafePointerToTarget(target)},
 		},
 	}
 }
@@ -515,15 +524,8 @@ func IncrementRefCall(target ast.Expr) *ast.ExprStmt {
 func DecrementRefCall(target ast.Expr) *ast.ExprStmt {
 	return &ast.ExprStmt{
 		X: &ast.CallExpr{
-			Fun: NewIdent(DECREMENT_REF_FUNC_NAME),
-			Args: []ast.Expr{
-				&ast.CallExpr{
-					Fun: UnsafePtrSelector(),
-					Args: []ast.Expr{
-						target,
-					},
-				},
-			},
+			Fun:  NewIdent(DECREMENT_REF_FUNC_NAME),
+			Args: []ast.Expr{target},
 		},
 	}
 }
@@ -532,14 +534,6 @@ func DecrementRefCall(target ast.Expr) *ast.ExprStmt {
 func NewIdent(name string) *ast.Ident {
 	return &ast.Ident{
 		Name: name,
-	}
-}
-
-// UnsafePtrSelector is a commonly used selector expression (unsafe.Pointer)
-func UnsafePtrSelector() *ast.SelectorExpr {
-	return &ast.SelectorExpr{
-		X:   NewIdent("unsafe"),
-		Sel: NewIdent("Pointer"),
 	}
 }
 
@@ -569,14 +563,7 @@ func CastUnsafePtr(castType, target ast.Expr) *ast.CallExpr {
 		Fun: &ast.ParenExpr{
 			X: castType,
 		},
-		Args: []ast.Expr{
-			&ast.CallExpr{
-				Fun: UnsafePtrSelector(),
-				Args: []ast.Expr{
-					target,
-				},
-			},
-		},
+		Args: []ast.Expr{target},
 	}
 }
 
@@ -624,11 +611,11 @@ func ExportComments(exportName string) []*ast.Comment {
 }
 
 // InstanceMethodParams returns a constructed field list for an instance method
-func InstanceMethodParams(selfTypeIdent *ast.Ident, fields ...*ast.Field) *ast.FieldList {
+func InstanceMethodParams(fields ...*ast.Field) *ast.FieldList {
 	tmpFields := []*ast.Field{
 		{
 			Names: []*ast.Ident{NewIdent("self")},
-			Type:  selfTypeIdent,
+			Type:  unsafePointer,
 		},
 	}
 	tmpFields = append(tmpFields, fields...)

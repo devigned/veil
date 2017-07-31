@@ -52,7 +52,6 @@ func (s Slice) CGoName() string {
 func (s Slice) NewAst() ast.Decl {
 	functionName := s.CGoName() + "_new"
 	localVarIdent := NewIdent("o")
-	goTypeIdent := NewIdent(s.GoName())
 	target := &ast.UnaryExpr{
 		Op: token.AND,
 		X:  localVarIdent,
@@ -70,7 +69,7 @@ func (s Slice) NewAst() ast.Decl {
 		Type: &ast.FuncType{
 			Results: &ast.FieldList{
 				List: []*ast.Field{
-					{Type: goTypeIdent},
+					{Type: unsafePointer},
 				},
 			},
 		},
@@ -78,7 +77,7 @@ func (s Slice) NewAst() ast.Decl {
 			List: []ast.Stmt{
 				DeclareVar(localVarIdent, goType),
 				IncrementRefCall(target),
-				CastReturn(goTypeIdent, target),
+				Return(UnsafePointerToTarget(target)),
 			},
 		},
 	}
@@ -107,7 +106,7 @@ func (s Slice) StringAst() ast.Decl {
 				List: []*ast.Field{
 					{
 						Names: []*ast.Ident{selfIdent},
-						Type:  goTypeIdent,
+						Type:  unsafePointer,
 					},
 				},
 			},
@@ -144,7 +143,7 @@ func (s Slice) ItemAst() ast.Decl {
 		},
 		Name: NewIdent(functionName),
 		Type: &ast.FuncType{
-			Params: InstanceMethodParams(goTypeIdent,
+			Params: InstanceMethodParams(
 				[]*ast.Field{
 					{
 						Names: []*ast.Ident{indexIdent},
@@ -201,7 +200,7 @@ func (s Slice) ItemSetAst() ast.Decl {
 		},
 		Name: NewIdent(functionName),
 		Type: &ast.FuncType{
-			Params: InstanceMethodParams(goTypeIdent,
+			Params: InstanceMethodParams(
 				[]*ast.Field{
 					{
 						Names: []*ast.Ident{indexIdent},
@@ -264,7 +263,7 @@ func (s Slice) ItemAppendAst() ast.Decl {
 		},
 		Name: NewIdent(functionName),
 		Type: &ast.FuncType{
-			Params: InstanceMethodParams(goTypeIdent,
+			Params: InstanceMethodParams(
 				[]*ast.Field{
 					{
 						Names: []*ast.Ident{itemIdent},
@@ -308,11 +307,6 @@ func (s Slice) ItemAppendAst() ast.Decl {
 // DestroyAst produces the []ast.Decl to destruct a slice type and decrement it's reference count
 func (s Slice) DestroyAst() ast.Decl {
 	functionName := s.CGoName() + "_destroy"
-	goTypeIdent := NewIdent(s.GoName())
-	target := &ast.UnaryExpr{
-		Op: token.AND,
-		X:  NewIdent("self"),
-	}
 
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
@@ -320,11 +314,11 @@ func (s Slice) DestroyAst() ast.Decl {
 		},
 		Name: NewIdent(functionName),
 		Type: &ast.FuncType{
-			Params: InstanceMethodParams(goTypeIdent),
+			Params: InstanceMethodParams(),
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
-				DecrementRefCall(target),
+				DecrementRefCall(NewIdent("self")),
 			},
 		},
 	}
