@@ -44,8 +44,11 @@ func (f Func) CGoName() string {
 	return pkgName + "_" + splitNames[len(splitNames)-1]
 }
 
-func (f Func) AliasedGoName() string {
+func (f Func) AliasedGoName() ast.Expr {
 	splitNames := strings.Split(f.Name(), ".")
 	pkgName := PkgPathAliasFromString(f.Pkg().Path())
-	return pkgName + "." + splitNames[len(splitNames)-1]
+	return &ast.SelectorExpr{
+		X:   NewIdent(pkgName),
+		Sel: NewIdent(splitNames[len(splitNames)-1]),
+	}
 }

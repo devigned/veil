@@ -51,79 +51,22 @@ func (s Slice) CGoName() string {
 // NewAst produces the []ast.Decl to construct a slice type and increment it's reference count
 func (s Slice) NewAst() ast.Decl {
 	functionName := s.CGoName() + "_new"
-	localVarIdent := NewIdent("o")
-	target := &ast.UnaryExpr{
-		Op: token.AND,
-		X:  localVarIdent,
-	}
-
 	goType := &ast.ArrayType{
 		Elt: NewIdent(s.elem.String()),
 	}
-
-	funcDecl := &ast.FuncDecl{
-		Doc: &ast.CommentGroup{
-			List: ExportComments(functionName),
-		},
-		Name: NewIdent(functionName),
-		Type: &ast.FuncType{
-			Results: &ast.FieldList{
-				List: []*ast.Field{
-					{Type: unsafePointer},
-				},
-			},
-		},
-		Body: &ast.BlockStmt{
-			List: []ast.Stmt{
-				DeclareVar(localVarIdent, goType),
-				IncrementRefCall(target),
-				Return(UnsafePointerToTarget(target)),
-			},
-		},
-	}
-
-	return funcDecl
+	return NewAst(functionName, goType)
 }
 
 // StringAst produces the []ast.Decl to provide a string representation of the slice
 func (s Slice) StringAst() ast.Decl {
 	functionName := s.CGoName() + "_str"
-	selfIdent := NewIdent("self")
 	goTypeIdent := NewIdent(s.GoName())
-	stringIdent := NewIdent("string")
+	return StringAst(functionName, goTypeIdent)
+}
 
-	castExpression := CastUnsafePtr(DeRef(goTypeIdent), selfIdent)
-	deRef := DeRef(castExpression)
-	sprintf := FormatSprintf("%#v", deRef)
-
-	funcDecl := &ast.FuncDecl{
-		Doc: &ast.CommentGroup{
-			List: ExportComments(functionName),
-		},
-		Name: NewIdent(functionName),
-		Type: &ast.FuncType{
-			Params: &ast.FieldList{
-				List: []*ast.Field{
-					{
-						Names: []*ast.Ident{selfIdent},
-						Type:  unsafePointer,
-					},
-				},
-			},
-			Results: &ast.FieldList{
-				List: []*ast.Field{
-					{Type: stringIdent},
-				},
-			},
-		},
-		Body: &ast.BlockStmt{
-			List: []ast.Stmt{
-				Return(sprintf),
-			},
-		},
-	}
-
-	return funcDecl
+// DestroyAst produces the []ast.Decl to destruct a slice type and decrement it's reference count
+func (s Slice) DestroyAst() ast.Decl {
+	return DestroyAst(s.CGoName() + "_destroy")
 }
 
 func (s Slice) ItemAst() ast.Decl {
@@ -297,28 +240,6 @@ func (s Slice) ItemAppendAst() ast.Decl {
 					},
 					Tok: token.ASSIGN,
 				},
-			},
-		},
-	}
-
-	return funcDecl
-}
-
-// DestroyAst produces the []ast.Decl to destruct a slice type and decrement it's reference count
-func (s Slice) DestroyAst() ast.Decl {
-	functionName := s.CGoName() + "_destroy"
-
-	funcDecl := &ast.FuncDecl{
-		Doc: &ast.CommentGroup{
-			List: ExportComments(functionName),
-		},
-		Name: NewIdent(functionName),
-		Type: &ast.FuncType{
-			Params: InstanceMethodParams(),
-		},
-		Body: &ast.BlockStmt{
-			List: []ast.Stmt{
-				DecrementRefCall(NewIdent("self")),
 			},
 		},
 	}

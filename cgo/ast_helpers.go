@@ -96,6 +96,97 @@ func RefsStruct() ast.Decl {
 	}
 }
 
+// NewAst produces the []ast.Decl to construct a slice type and increment it's reference count
+func NewAst(functionName string, goType ast.Expr) ast.Decl {
+	localVarIdent := NewIdent("o")
+	target := &ast.UnaryExpr{
+		Op: token.AND,
+		X:  localVarIdent,
+	}
+
+	funcDecl := &ast.FuncDecl{
+		Doc: &ast.CommentGroup{
+			List: ExportComments(functionName),
+		},
+		Name: NewIdent(functionName),
+		Type: &ast.FuncType{
+			Results: &ast.FieldList{
+				List: []*ast.Field{
+					{Type: unsafePointer},
+				},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				DeclareVar(localVarIdent, goType),
+				IncrementRefCall(target),
+				Return(UnsafePointerToTarget(target)),
+			},
+		},
+	}
+
+	return funcDecl
+}
+
+// StringAst produces the []ast.Decl to provide a string representation of the slice
+func StringAst(functionName string, goType ast.Expr) ast.Decl {
+	selfIdent := NewIdent("self")
+	stringIdent := NewIdent("string")
+
+	castExpression := CastUnsafePtr(DeRef(goType), selfIdent)
+	deRef := DeRef(castExpression)
+	sprintf := FormatSprintf("%#v", deRef)
+
+	funcDecl := &ast.FuncDecl{
+		Doc: &ast.CommentGroup{
+			List: ExportComments(functionName),
+		},
+		Name: NewIdent(functionName),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{
+				List: []*ast.Field{
+					{
+						Names: []*ast.Ident{selfIdent},
+						Type:  unsafePointer,
+					},
+				},
+			},
+			Results: &ast.FieldList{
+				List: []*ast.Field{
+					{Type: stringIdent},
+				},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				Return(sprintf),
+			},
+		},
+	}
+
+	return funcDecl
+}
+
+// DestroyAst produces the []ast.Decl to destruct a slice type and decrement it's reference count
+func DestroyAst(functionName string) ast.Decl {
+	funcDecl := &ast.FuncDecl{
+		Doc: &ast.CommentGroup{
+			List: ExportComments(functionName),
+		},
+		Name: NewIdent(functionName),
+		Type: &ast.FuncType{
+			Params: InstanceMethodParams(),
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				DecrementRefCall(NewIdent("self")),
+			},
+		},
+	}
+
+	return funcDecl
+}
+
 func DecrementRef() ast.Decl {
 	ptr := NewIdent("ptr")
 	refsType := NewIdent(REFS_VAR_NAME)
@@ -552,11 +643,6 @@ func DeclareVar(name *ast.Ident, t ast.Expr) *ast.DeclStmt {
 	}
 }
 
-// CastReturn returns a return expression with a cast version of the target expression
-func CastReturn(castType, target ast.Expr) *ast.ReturnStmt {
-	return Return(CastUnsafePtr(castType, target))
-}
-
 // CastUnsafePtr take a cast type and target expression and returns a cast expression
 func CastUnsafePtr(castType, target ast.Expr) *ast.CallExpr {
 	return &ast.CallExpr{
@@ -631,7 +717,7 @@ func FuncAst(f *Func) *ast.FuncDecl {
 	functionName := f.CGoName()
 	sig := fun.Type().(*types.Signature)
 	functionCall := &ast.CallExpr{
-		Fun:  NewIdent(f.AliasedGoName()),
+		Fun:  f.AliasedGoName(),
 		Args: ParamIdents(sig.Params()),
 	}
 
@@ -643,12 +729,14 @@ func FuncAst(f *Func) *ast.FuncDecl {
 		Body: &ast.BlockStmt{List: []ast.Stmt{}},
 	}
 
+	params := Fields(sig.Params())
+
 	if sig.Results().Len() > 0 {
 		// signature will return
 		funcDecl.Body.List = append(funcDecl.Body.List, Return(functionCall))
 
 		funcDecl.Type = &ast.FuncType{
-			Params:  Fields(sig.Params()),
+			Params:  params,
 			Results: Fields(sig.Results()),
 		}
 	} else {
@@ -657,7 +745,7 @@ func FuncAst(f *Func) *ast.FuncDecl {
 		})
 
 		funcDecl.Type = &ast.FuncType{
-			Params: Fields(sig.Params()),
+			Params: params,
 		}
 	}
 
@@ -672,9 +760,29 @@ func ParamIdents(funcParams *types.Tuple) []ast.Expr {
 
 	args := make([]ast.Expr, funcParams.Len())
 	for i := 0; i < funcParams.Len(); i++ {
-		args[i] = NewIdent(funcParams.At(i).Name())
+		param := funcParams.At(i)
+		args[i] = ParamExpr(param, param.Type())
 	}
 	return args
+}
+
+func ParamExpr(param *types.Var, t types.Type) ast.Expr {
+	switch t := t.(type) {
+	case *types.Pointer:
+		return ParamExpr(param, t.Elem())
+	case *types.Named:
+		pkg := param.Pkg()
+		typeName := t.Obj().Name()
+		castExpr := DeRef(CastUnsafePtr(DeRef(&ast.SelectorExpr{
+			X:   NewIdent(PkgPathAliasFromString(pkg.Path())),
+			Sel: NewIdent(typeName),
+		}), NewIdent(param.Name())))
+		return castExpr
+	case *types.Slice:
+		return CastUnsafePtr(DeRef(NewIdent("[]"+t.Elem().String())), NewIdent(param.Name()))
+	default:
+		return NewIdent(param.Name())
+	}
 }
 
 // Fields transforms parameters into a list of AST fields
@@ -688,12 +796,87 @@ func Fields(funcParams *types.Tuple) *ast.FieldList {
 		p := funcParams.At(i)
 		switch t := p.Type().(type) {
 		case *types.Pointer:
-			fields[i] = VarToField(p, t.Elem())
+			fields[i] = UnsafeOrCGoField(p, t.Elem())
 		default:
-			fields[i] = VarToField(p, t)
+			fields[i] = UnsafeOrCGoField(p, t)
 		}
 	}
 	return &ast.FieldList{List: fields}
+}
+
+// UnsafeOrCGoField returns a Basic typed field or an unsafe pointer if not a Basic type
+func UnsafeOrCGoField(p *types.Var, t types.Type) *ast.Field {
+	returnDefault := func() *ast.Field {
+		return &ast.Field{
+			Type:  unsafePointer,
+			Names: []*ast.Ident{NewIdent(p.Name())},
+		}
+	}
+	switch t.(type) {
+	case *types.Basic:
+		return VarToField(p, t)
+	case *types.Named, *types.Interface:
+		if ImplementsError(t) {
+			return &ast.Field{
+				Type: NewIdent("error"),
+			}
+		} else {
+			return returnDefault()
+		}
+	default:
+		if ImplementsError(t) {
+			return &ast.Field{
+				Type: NewIdent("error"),
+			}
+		} else {
+			return returnDefault()
+		}
+	}
+}
+
+type hasMethods interface {
+	NumMethods() int
+	Method(int) *types.Func
+}
+
+// ImplementsError returns true if a type has an Error() string function signature
+func ImplementsError(t types.Type) bool {
+	isError := func(fun *types.Func) bool {
+		if sig, ok := fun.Type().(*types.Signature); ok {
+			if fun.Name() != "Error" {
+				return false
+			}
+
+			if sig.Params().Len() != 0 {
+				return false
+			}
+
+			if sig.Results().Len() == 1 {
+				result := sig.Results().At(0)
+				if obj, ok := result.Type().(*types.Basic); ok {
+					return obj.Kind() == types.String
+				}
+			}
+		}
+
+		return false
+	}
+
+	hasErrorMethod := func(obj hasMethods) bool {
+		numMethods := obj.NumMethods()
+		for i := 0; i < numMethods; i++ {
+			if isError(obj.Method(i)) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if obj, ok := t.Underlying().(hasMethods); ok {
+		return hasErrorMethod(obj)
+	}
+
+	return false
 }
 
 // VarToField transforms a Var into an AST field
