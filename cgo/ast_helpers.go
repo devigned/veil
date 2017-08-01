@@ -658,6 +658,14 @@ func DeRef(expr ast.Expr) *ast.StarExpr {
 	return &ast.StarExpr{X: expr}
 }
 
+// Ref takes an expression and prefaces the expression with a &
+func Ref(expr ast.Expr) ast.Expr {
+	return &ast.UnaryExpr{
+		X:  expr,
+		Op: token.AND,
+	}
+}
+
 // Return takes an expression and returns a return statement containing the expression
 func Return(expression ast.Expr) *ast.ReturnStmt {
 	return &ast.ReturnStmt{
@@ -767,21 +775,25 @@ func ParamIdents(funcParams *types.Tuple) []ast.Expr {
 }
 
 func ParamExpr(param *types.Var, t types.Type) ast.Expr {
+	return CastExpr(t, NewIdent(param.Name()))
+}
+
+func CastExpr(t types.Type, ident *ast.Ident) ast.Expr {
 	switch t := t.(type) {
 	case *types.Pointer:
-		return ParamExpr(param, t.Elem())
+		return CastExpr(t.Elem(), ident)
 	case *types.Named:
-		pkg := param.Pkg()
+		pkg := t.Obj().Pkg()
 		typeName := t.Obj().Name()
-		castExpr := DeRef(CastUnsafePtr(DeRef(&ast.SelectorExpr{
+		castExpr := CastUnsafePtr(DeRef(&ast.SelectorExpr{
 			X:   NewIdent(PkgPathAliasFromString(pkg.Path())),
 			Sel: NewIdent(typeName),
-		}), NewIdent(param.Name())))
+		}), ident)
 		return castExpr
 	case *types.Slice:
-		return CastUnsafePtr(DeRef(NewIdent("[]"+t.Elem().String())), NewIdent(param.Name()))
+		return CastUnsafePtr(DeRef(NewIdent("[]"+t.Elem().String())), ident)
 	default:
-		return NewIdent(param.Name())
+		return ident
 	}
 }
 
