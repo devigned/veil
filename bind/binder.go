@@ -11,6 +11,7 @@ import (
 	"go/printer"
 	"go/token"
 	"os"
+	"path"
 )
 
 var (
@@ -22,22 +23,46 @@ type Bindable interface {
 	Bind(outDir string) error
 }
 
+type wrapper struct {
+	binder Bindable
+	pkg    *cgo.Package
+}
+
+func (b wrapper) Bind(outDir string) error {
+	code := toCodeFile(b.pkg)
+	mainFile := path.Join(outDir, "main.go")
+	f, err := os.Create(mainFile)
+	if err != nil {
+		return core.NewSystemErrorF("Unable to create %s", path.Join(outDir, "main.go"))
+	}
+
+	defer f.Close()
+
+	w := bufio.NewWriter(f)
+	printer.Fprint(w, &token.FileSet{}, code)
+	defer w.Flush()
+
+	b.binder.Bind(outDir)
+	return nil
+}
+
 // NewBinder is a factory method for creating a new binder for a given target
 func NewBinder(pkg *cgo.Package, target string) (Bindable, error) {
-	bindable, ok := registry[target]
-
+	binderFactory, ok := registry[target]
 	if !ok {
 		return nil, core.NewSystemError(fmt.Sprintf("I don't know how to create a binder for %s", target))
 	}
 
-	cgoAst(pkg)
-	return bindable(pkg), nil
+	bindable := wrapper{
+		binder: binderFactory(pkg),
+		pkg:    pkg,
+	}
+
+	return bindable, nil
 }
 
-// cgoAst generates a map of file names and io.Writers which are the cgo substrate for targets to bind.
-// The cgo layer is intended to normalize types from Go into more standard C types and provide a standard
-// layer to build FFI language bindings.
-func cgoAst(pkg *cgo.Package) *ast.File {
+// toCodeFile generates a CGo wrapper around the pkg
+func toCodeFile(pkg *cgo.Package) *ast.File {
 
 	// printPracticeAst()
 	declarations := []ast.Decl{
@@ -60,11 +85,6 @@ func cgoAst(pkg *cgo.Package) *ast.File {
 		Decls: declarations,
 	}
 
-	// Print the AST.
-	// ast.Print(&token.FileSet{}, mainFile)
-	writer := bufio.NewWriter(os.Stdout)
-	printer.Fprint(writer, &token.FileSet{}, mainFile)
-	defer writer.Flush()
 	return mainFile
 }
 

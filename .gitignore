@@ -31,3 +31,4 @@ veil
 
 _templates
 .DS_Store
+output/
