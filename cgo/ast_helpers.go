@@ -1,6 +1,7 @@
 package cgo
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -592,12 +593,10 @@ func IncrementRef() ast.Decl {
 	}
 }
 
-func UnsafePointerToTarget(target ast.Expr) ast.Expr {
+func UnsafePointerToTarget(targets ...ast.Expr) ast.Expr {
 	return &ast.CallExpr{
-		Fun: unsafePointer,
-		Args: []ast.Expr{
-			target,
-		},
+		Fun:  unsafePointer,
+		Args: targets,
 	}
 }
 
@@ -667,11 +666,9 @@ func Ref(expr ast.Expr) ast.Expr {
 }
 
 // Return takes an expression and returns a return statement containing the expression
-func Return(expression ast.Expr) *ast.ReturnStmt {
+func Return(expressions ...ast.Expr) *ast.ReturnStmt {
 	return &ast.ReturnStmt{
-		Results: []ast.Expr{
-			expression,
-		},
+		Results: expressions,
 	}
 }
 
@@ -724,6 +721,7 @@ func FuncAst(f *Func) *ast.FuncDecl {
 	fun := f.Func
 	functionName := f.CGoName()
 	sig := fun.Type().(*types.Signature)
+
 	functionCall := &ast.CallExpr{
 		Fun:  f.AliasedGoName(),
 		Args: ParamIdents(sig.Params()),
@@ -740,8 +738,36 @@ func FuncAst(f *Func) *ast.FuncDecl {
 	params := Fields(sig.Params())
 
 	if sig.Results().Len() > 0 {
-		// signature will return
-		funcDecl.Body.List = append(funcDecl.Body.List, Return(functionCall))
+		resultNames := make([]ast.Expr, sig.Results().Len())
+		for i := 0; i < sig.Results().Len(); i++ {
+			resultNames[i] = NewIdent(fmt.Sprintf("result%d", i))
+		}
+
+		assign := &ast.AssignStmt{
+			Lhs: resultNames,
+			Tok: token.DEFINE,
+			Rhs: []ast.Expr{functionCall},
+		}
+
+		funcDecl.Body.List = append(funcDecl.Body.List, assign)
+		resultExprs := make([]ast.Expr, sig.Results().Len())
+		for i := 0; i < sig.Results().Len(); i++ {
+			result := sig.Results().At(i)
+			switch result.Type().(type) {
+			case *types.Basic:
+				resultExprs[i] = resultNames[i]
+			case *types.Pointer:
+				// already have a pointer, so just count the reference
+				funcDecl.Body.List = append(funcDecl.Body.List, IncrementRefCall(resultNames[i]))
+				resultExprs[i] = UnsafePointerToTarget(resultNames[i])
+			case *types.Named:
+				// grab a reference to the named type
+				funcDecl.Body.List = append(funcDecl.Body.List, IncrementRefCall(Ref(resultNames[i])))
+				resultExprs[i] = UnsafePointerToTarget(Ref(resultNames[i]))
+			}
+		}
+
+		funcDecl.Body.List = append(funcDecl.Body.List, Return(resultExprs...))
 
 		funcDecl.Type = &ast.FuncType{
 			Params:  params,
@@ -758,6 +784,11 @@ func FuncAst(f *Func) *ast.FuncDecl {
 	}
 
 	return funcDecl
+}
+
+type result struct {
+	Name *ast.Ident
+	Stmt ast.Stmt
 }
 
 // ParamIdents transforms parameter tuples into a slice of AST expressions
@@ -781,17 +812,17 @@ func ParamExpr(param *types.Var, t types.Type) ast.Expr {
 func CastExpr(t types.Type, ident *ast.Ident) ast.Expr {
 	switch t := t.(type) {
 	case *types.Pointer:
-		return CastExpr(t.Elem(), ident)
+		return DeRef(CastExpr(t.Elem(), ident))
 	case *types.Named:
 		pkg := t.Obj().Pkg()
 		typeName := t.Obj().Name()
-		castExpr := CastUnsafePtr(DeRef(&ast.SelectorExpr{
+		castExpr := DeRef(CastUnsafePtr(DeRef(&ast.SelectorExpr{
 			X:   NewIdent(PkgPathAliasFromString(pkg.Path())),
 			Sel: NewIdent(typeName),
-		}), ident)
+		}), ident))
 		return castExpr
 	case *types.Slice:
-		return CastUnsafePtr(DeRef(NewIdent("[]"+t.Elem().String())), ident)
+		return DeRef(CastUnsafePtr(DeRef(NewIdent("[]"+t.Elem().String())), ident))
 	default:
 		return ident
 	}
@@ -827,22 +858,16 @@ func UnsafeOrCGoField(p *types.Var, t types.Type) *ast.Field {
 	switch t.(type) {
 	case *types.Basic:
 		return VarToField(p, t)
-	case *types.Named, *types.Interface:
-		if ImplementsError(t) {
-			return &ast.Field{
-				Type: NewIdent("error"),
-			}
-		} else {
-			return returnDefault()
-		}
+	//case *types.Named, *types.Interface:
+	//	if ImplementsError(t) {
+	//		return &ast.Field{
+	//			Type: NewIdent("error"),
+	//		}
+	//	} else {
+	//		return returnDefault()
+	//	}
 	default:
-		if ImplementsError(t) {
-			return &ast.Field{
-				Type: NewIdent("error"),
-			}
-		} else {
-			return returnDefault()
-		}
+		return returnDefault()
 	}
 }
 

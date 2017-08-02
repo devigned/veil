@@ -176,9 +176,6 @@ func (s Struct) Setter(field *types.Var) ast.Decl {
 	} else {
 		params = InstanceMethodParams(&ast.Field{Type: unsafePointer, Names: []*ast.Ident{localVarIdent}})
 		rhs := CastExpr(field.Type(), localVarIdent)
-		if _, ok := field.Type().(*types.Pointer); !ok {
-			rhs = DeRef(rhs)
-		}
 		body.List = []ast.Stmt{
 			&ast.AssignStmt{
 				Lhs: []ast.Expr{
