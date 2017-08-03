@@ -21,6 +21,8 @@ var (
 		X:   NewIdent("unsafe"),
 		Sel: NewIdent("Pointer"),
 	}
+
+	uintptr = NewIdent("uintptr")
 )
 
 // CObjectStruct produces an AST struct which will represent a C exposed Object
@@ -113,7 +115,7 @@ func NewAst(functionName string, goType ast.Expr) ast.Decl {
 		Type: &ast.FuncType{
 			Results: &ast.FieldList{
 				List: []*ast.Field{
-					{Type: unsafePointer},
+					{Type: uintptr},
 				},
 			},
 		},
@@ -121,7 +123,7 @@ func NewAst(functionName string, goType ast.Expr) ast.Decl {
 			List: []ast.Stmt{
 				DeclareVar(localVarIdent, goType),
 				IncrementRefCall(target),
-				Return(UnsafePointerToTarget(target)),
+				Return(UintPtr(UnsafePointerToTarget(target))),
 			},
 		},
 	}
@@ -186,6 +188,95 @@ func DestroyAst(functionName string) ast.Decl {
 	}
 
 	return funcDecl
+}
+
+func Init() ast.Decl {
+	refsVar := NewIdent(REFS_VAR_NAME)
+	refsField := NewIdent(REFS_STRUCT_FIELD_NAME)
+	return &ast.FuncDecl{
+		Name: NewIdent("init"),
+		Type: &ast.FuncType{},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				// refs.Lock()
+				&ast.ExprStmt{
+					X: &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   refsVar,
+							Sel: NewIdent("Lock"),
+						},
+					},
+				},
+				// refs.next = -1
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						&ast.SelectorExpr{
+							X:   refsVar,
+							Sel: NewIdent("next"),
+						},
+					},
+					Tok: token.ASSIGN,
+					Rhs: []ast.Expr{
+						&ast.BasicLit{
+							Value: "-1",
+							Kind:  token.INT,
+						},
+					},
+				},
+				// refs.refs = make(map[unsafe.Pointer]int32
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						&ast.SelectorExpr{
+							X:   refsVar,
+							Sel: refsField,
+						},
+					},
+					Tok: token.ASSIGN,
+					Rhs: []ast.Expr{
+						&ast.CallExpr{
+							Fun: NewIdent("make"),
+							Args: []ast.Expr{
+								&ast.MapType{
+									Key:   unsafePointer,
+									Value: NewIdent("int32"),
+								},
+							},
+						},
+					},
+				},
+				// refs.ptrs = make(map[int32]cobject)
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						&ast.SelectorExpr{
+							X:   refsVar,
+							Sel: NewIdent("ptrs"),
+						},
+					},
+					Tok: token.ASSIGN,
+					Rhs: []ast.Expr{
+						&ast.CallExpr{
+							Fun: NewIdent("make"),
+							Args: []ast.Expr{
+								&ast.MapType{
+									Key:   NewIdent("int32"),
+									Value: NewIdent(COBJECT_STRUCT_TYPE_NAME),
+								},
+							},
+						},
+					},
+				},
+				// refs.Unlock()
+				&ast.ExprStmt{
+					X: &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   refsVar,
+							Sel: NewIdent("Unlock"),
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 func DecrementRef() ast.Decl {
@@ -520,7 +611,7 @@ func IncrementRef() ast.Decl {
 										X:   refsType,
 										Sel: next,
 									},
-									Op: token.LSS,
+									Op: token.GTR,
 									Y:  &ast.BasicLit{Value: "0", Kind: token.INT},
 								},
 								Body: &ast.BlockStmt{
@@ -716,6 +807,14 @@ func InstanceMethodParams(fields ...*ast.Field) *ast.FieldList {
 	return params
 }
 
+// UintPtr wraps an argument in a uintptr
+func UintPtr(arg ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun:  NewIdent("uintptr"),
+		Args: []ast.Expr{arg},
+	}
+}
+
 // FuncAst returns an FuncDecl which wraps the func
 func FuncAst(f *Func) *ast.FuncDecl {
 	fun := f.Func
@@ -740,7 +839,7 @@ func FuncAst(f *Func) *ast.FuncDecl {
 	if sig.Results().Len() > 0 {
 		resultNames := make([]ast.Expr, sig.Results().Len())
 		for i := 0; i < sig.Results().Len(); i++ {
-			resultNames[i] = NewIdent(fmt.Sprintf("result%d", i))
+			resultNames[i] = NewIdent(fmt.Sprintf("r%d", i))
 		}
 
 		assign := &ast.AssignStmt{
@@ -759,11 +858,11 @@ func FuncAst(f *Func) *ast.FuncDecl {
 			case *types.Pointer:
 				// already have a pointer, so just count the reference
 				funcDecl.Body.List = append(funcDecl.Body.List, IncrementRefCall(resultNames[i]))
-				resultExprs[i] = UnsafePointerToTarget(resultNames[i])
+				resultExprs[i] = UintPtr(UnsafePointerToTarget(resultNames[i]))
 			case *types.Named:
 				// grab a reference to the named type
 				funcDecl.Body.List = append(funcDecl.Body.List, IncrementRefCall(Ref(resultNames[i])))
-				resultExprs[i] = UnsafePointerToTarget(Ref(resultNames[i]))
+				resultExprs[i] = UintPtr(UnsafePointerToTarget(Ref(resultNames[i])))
 			}
 		}
 
@@ -809,20 +908,29 @@ func ParamExpr(param *types.Var, t types.Type) ast.Expr {
 	return CastExpr(t, NewIdent(param.Name()))
 }
 
-func CastExpr(t types.Type, ident *ast.Ident) ast.Expr {
+// UintptrToUnsafePointer wraps the argument in an UnsafePointer
+func UintptrToUnsafePointer(arg ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun:  unsafePointer,
+		Args: []ast.Expr{arg},
+	}
+}
+
+func CastExpr(t types.Type, ident ast.Expr) ast.Expr {
+
 	switch t := t.(type) {
 	case *types.Pointer:
-		return DeRef(CastExpr(t.Elem(), ident))
+		return DeRef(CastExpr(t.Elem(), UintptrToUnsafePointer(ident)))
 	case *types.Named:
 		pkg := t.Obj().Pkg()
 		typeName := t.Obj().Name()
 		castExpr := DeRef(CastUnsafePtr(DeRef(&ast.SelectorExpr{
 			X:   NewIdent(PkgPathAliasFromString(pkg.Path())),
 			Sel: NewIdent(typeName),
-		}), ident))
+		}), UintptrToUnsafePointer(ident)))
 		return castExpr
 	case *types.Slice:
-		return DeRef(CastUnsafePtr(DeRef(NewIdent("[]"+t.Elem().String())), ident))
+		return DeRef(CastUnsafePtr(DeRef(NewIdent("[]"+t.Elem().String())), UintptrToUnsafePointer(ident)))
 	default:
 		return ident
 	}
@@ -839,19 +947,19 @@ func Fields(funcParams *types.Tuple) *ast.FieldList {
 		p := funcParams.At(i)
 		switch t := p.Type().(type) {
 		case *types.Pointer:
-			fields[i] = UnsafeOrCGoField(p, t.Elem())
+			fields[i] = UintPtrOrBasic(p, t.Elem())
 		default:
-			fields[i] = UnsafeOrCGoField(p, t)
+			fields[i] = UintPtrOrBasic(p, t)
 		}
 	}
 	return &ast.FieldList{List: fields}
 }
 
-// UnsafeOrCGoField returns a Basic typed field or an unsafe pointer if not a Basic type
-func UnsafeOrCGoField(p *types.Var, t types.Type) *ast.Field {
+// UintPtrOrBasic returns a Basic typed field or an unsafe pointer if not a Basic type
+func UintPtrOrBasic(p *types.Var, t types.Type) *ast.Field {
 	returnDefault := func() *ast.Field {
 		return &ast.Field{
-			Type:  unsafePointer,
+			Type:  uintptr,
 			Names: []*ast.Ident{NewIdent(p.Name())},
 		}
 	}

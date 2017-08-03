@@ -116,7 +116,7 @@ func (s Struct) Getter(field *types.Var) ast.Decl {
 		}
 
 	} else {
-		results.List = []*ast.Field{{Type: unsafePointer}}
+		results.List = []*ast.Field{{Type: uintptr}}
 		body.List = []ast.Stmt{
 			&ast.AssignStmt{
 				Lhs: []ast.Expr{localVarIdent},
@@ -128,7 +128,7 @@ func (s Struct) Getter(field *types.Var) ast.Decl {
 					},
 				},
 			},
-			Return(UnsafePointerToTarget(Ref(localVarIdent))),
+			Return(UintPtr(UnsafePointerToTarget(Ref(localVarIdent)))),
 		}
 	}
 
