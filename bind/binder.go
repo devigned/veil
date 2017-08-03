@@ -12,6 +12,7 @@ import (
 	"go/token"
 	"os"
 	"path"
+	"os/exec"
 )
 
 var (
@@ -40,9 +41,25 @@ func (b wrapper) Bind(outDir string) error {
 
 	w := bufio.NewWriter(f)
 	printer.Fprint(w, &token.FileSet{}, code)
-	defer w.Flush()
+	w.Flush()
+
+	buildSharedLib(outDir)
 
 	b.binder.Bind(outDir)
+	return nil
+}
+
+func buildSharedLib(outDir string) error {
+	cmd := exec.Command("go", "build", "-buildmode", "c-shared", ".")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = outDir
+
+	if err := cmd.Run(); err != nil {
+		return core.NewSystemErrorF("error building CGo shared library: %v\n", err)
+	}
+
 	return nil
 }
 
