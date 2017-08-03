@@ -1,9 +1,5 @@
 package helloworld
 
-import (
-	"fmt"
-)
-
 var (
 	magicNumber = 0
 )
@@ -48,9 +44,13 @@ func PublicUnbound(arg1 int) int {
 	return arg1
 }
 
+func PublicMultiReturn(someInt int, someString string) (int, string) {
+	return someInt, someString
+}
+
 // PublicUnboundError returns an error
-func PublicUnboundError(arg1 int) (int, error) {
-	return 0, fmt.Errorf("public unbound error given: %s", arg1)
+func PublicUnboundError(arg1 int) (int, string) {
+	return 0, "foo"
 }
 
 // PublicBound returns the meaning of everything
