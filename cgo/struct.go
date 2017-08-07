@@ -128,7 +128,7 @@ func (s Struct) Getter(field *types.Var) ast.Decl {
 					},
 				},
 			},
-			Return(UintPtr(UnsafePointerToTarget(Ref(localVarIdent)))),
+			Return(UintPtr(ToUnsafePointer(Ref(localVarIdent)))),
 		}
 	}
 

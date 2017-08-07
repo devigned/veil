@@ -9,11 +9,13 @@ import (
 )
 
 const (
-	INCREMENT_REF_FUNC_NAME  = "cgo_incref"
-	DECREMENT_REF_FUNC_NAME  = "cgo_decref"
-	COBJECT_STRUCT_TYPE_NAME = "cobject"
-	REFS_VAR_NAME            = "refs"
-	REFS_STRUCT_FIELD_NAME   = "refs"
+	INCREMENT_REF_FUNC_NAME   = "cgo_incref"
+	DECREMENT_REF_FUNC_NAME   = "cgo_decref"
+	ERROR_TO_STRING_FUNC_NAME = "cgo_error_to_string"
+	CFREE_FUNC_NAME           = "cgo_cfree"
+	COBJECT_STRUCT_TYPE_NAME  = "cobject"
+	REFS_VAR_NAME             = "refs"
+	REFS_STRUCT_FIELD_NAME    = "refs"
 )
 
 var (
@@ -123,7 +125,7 @@ func NewAst(functionName string, goType ast.Expr) ast.Decl {
 			List: []ast.Stmt{
 				DeclareVar(localVarIdent, goType),
 				IncrementRefCall(target),
-				Return(UintPtr(UnsafePointerToTarget(target))),
+				Return(UintPtr(ToUnsafePointer(target))),
 			},
 		},
 	}
@@ -684,7 +686,70 @@ func IncrementRef() ast.Decl {
 	}
 }
 
-func UnsafePointerToTarget(targets ...ast.Expr) ast.Expr {
+func ErrorToString() ast.Decl {
+	self := NewIdent("self")
+
+	// func cgo_error_to_string(self unsafe.Pointer) string {
+	return &ast.FuncDecl{
+		Doc:  &ast.CommentGroup{List: ExportComments(ERROR_TO_STRING_FUNC_NAME)},
+		Name: NewIdent(ERROR_TO_STRING_FUNC_NAME),
+		Type: &ast.FuncType{
+			Params: InstanceMethodParams(),
+			Results: &ast.FieldList{
+				List: []*ast.Field{
+					{
+						Type: NewIdent("string"),
+					},
+				},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				// return (*(*error)(self)).Error()
+				Return(&ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   DeRef(CastUnsafePtr(DeRef(NewIdent("error")), self)),
+						Sel: NewIdent("Error"),
+					},
+				}),
+			},
+		},
+	}
+	// }
+}
+
+// CFree takes an unsafe pointer and frees the C memory associated with that pointer
+func CFree() ast.Decl {
+	self := NewIdent("self")
+
+	// func cgo_cfree(self unsafe.Pointer) {
+	return &ast.FuncDecl{
+		Doc:  &ast.CommentGroup{List: ExportComments(CFREE_FUNC_NAME)},
+		Name: NewIdent(CFREE_FUNC_NAME),
+		Type: &ast.FuncType{
+			Params: InstanceMethodParams(),
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				// C.free(self)
+				&ast.ExprStmt{
+					X: &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   NewIdent("C"),
+							Sel: NewIdent("free"),
+						},
+						Args: []ast.Expr{
+							self,
+						},
+					},
+				},
+			},
+		},
+	}
+	// }
+}
+
+func ToUnsafePointer(targets ...ast.Expr) ast.Expr {
 	return &ast.CallExpr{
 		Fun:  unsafePointer,
 		Args: targets,
@@ -696,7 +761,7 @@ func IncrementRefCall(target ast.Expr) *ast.ExprStmt {
 	return &ast.ExprStmt{
 		X: &ast.CallExpr{
 			Fun:  NewIdent(INCREMENT_REF_FUNC_NAME),
-			Args: []ast.Expr{UnsafePointerToTarget(target)},
+			Args: []ast.Expr{ToUnsafePointer(target)},
 		},
 	}
 }
@@ -792,6 +857,18 @@ func ExportComments(exportName string) []*ast.Comment {
 	}
 }
 
+// IncludeComments takes includeNames and returns AST comments for each include
+func IncludeComments(includeNames ...string) []*ast.Comment {
+	comments := make([]*ast.Comment, len(includeNames))
+	for i := 0; i < len(comments); i++ {
+		comments[i] = &ast.Comment{
+			Text:  "//#include " + includeNames[i],
+			Slash: token.Pos(1),
+		}
+	}
+	return comments
+}
+
 // InstanceMethodParams returns a constructed field list for an instance method
 func InstanceMethodParams(fields ...*ast.Field) *ast.FieldList {
 	tmpFields := []*ast.Field{
@@ -858,11 +935,11 @@ func FuncAst(f *Func) *ast.FuncDecl {
 			case *types.Pointer:
 				// already have a pointer, so just count the reference
 				funcDecl.Body.List = append(funcDecl.Body.List, IncrementRefCall(resultNames[i]))
-				resultExprs[i] = UintPtr(UnsafePointerToTarget(resultNames[i]))
+				resultExprs[i] = UintPtr(ToUnsafePointer(resultNames[i]))
 			case *types.Named:
 				// grab a reference to the named type
 				funcDecl.Body.List = append(funcDecl.Body.List, IncrementRefCall(Ref(resultNames[i])))
-				resultExprs[i] = UintPtr(UnsafePointerToTarget(Ref(resultNames[i])))
+				resultExprs[i] = UintPtr(ToUnsafePointer(Ref(resultNames[i])))
 			}
 		}
 

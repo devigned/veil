@@ -11,8 +11,8 @@ import (
 	"go/printer"
 	"go/token"
 	"os"
-	"path"
 	"os/exec"
+	"path"
 )
 
 var (
@@ -49,20 +49,6 @@ func (b wrapper) Bind(outDir string) error {
 	return nil
 }
 
-func buildSharedLib(outDir string) error {
-	cmd := exec.Command("go", "build", "-buildmode", "c-shared", ".")
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Dir = outDir
-
-	if err := cmd.Run(); err != nil {
-		return core.NewSystemErrorF("error building CGo shared library: %v\n", err)
-	}
-
-	return nil
-}
-
 // NewBinder is a factory method for creating a new binder for a given target
 func NewBinder(pkg *cgo.Package, target string) (Bindable, error) {
 	binderFactory, ok := registry[target]
@@ -78,18 +64,39 @@ func NewBinder(pkg *cgo.Package, target string) (Bindable, error) {
 	return bindable, nil
 }
 
+func buildSharedLib(outDir string) error {
+	cmd := exec.Command("go", "build", "-buildmode", "c-shared", ".")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = outDir
+
+	if err := cmd.Run(); err != nil {
+		return core.NewSystemErrorF("error building CGo shared library: %v\n", err)
+	}
+
+	return nil
+}
+
 // toCodeFile generates a CGo wrapper around the pkg
 func toCodeFile(pkg *cgo.Package) *ast.File {
 
 	// printPracticeAst()
+	cImport := cgo.Imports("C")
+	cImport.Doc = &ast.CommentGroup{
+		List: cgo.IncludeComments("<stdlib.h>"),
+	}
 	declarations := []ast.Decl{
-		cgo.Imports("C"),
+		cImport,
 		cgo.Imports("fmt", "sync", "unsafe"), //, "strconv", "strings", "os"
 		cgo.ImportsFromMap(pkg.ImportAliases()),
 		cgo.RefsStruct(),
 		cgo.CObjectStruct(),
 		cgo.DecrementRef(),
 		cgo.IncrementRef(),
+		cgo.Init(),
+		cgo.ErrorToString(),
+		cgo.CFree(),
 	}
 
 	declarations = append(declarations, pkg.ToAst()...)
@@ -107,8 +114,12 @@ func toCodeFile(pkg *cgo.Package) *ast.File {
 
 func printPracticeAst() {
 	src := `
+package main
 
-	package main
+//#include <stdlib.h>
+import (
+	"C"
+)
 
 		`
 

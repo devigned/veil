@@ -7,7 +7,7 @@ import (
 )
 
 // Imports creates a GenDecl for a series of imports
-func Imports(imports ...string) ast.Decl {
+func Imports(imports ...string) *ast.GenDecl {
 	objs := collection.AsEnumerable(imports).Enumerate(nil).
 		Select(func(item interface{}) interface{} {
 			return &ast.ImportSpec{
@@ -23,14 +23,11 @@ func Imports(imports ...string) ast.Decl {
 		specs = append(specs, item.(ast.Spec))
 	}
 
-	var decl ast.Decl
-	decl = &ast.GenDecl{
+	return &ast.GenDecl{
 		Tok:    token.IMPORT,
 		Specs:  specs,
 		Lparen: token.Pos(1),
 	}
-
-	return decl
 }
 
 // ImportsFromMap create import ASTs from alias keys and package path values
