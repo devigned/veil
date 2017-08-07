@@ -9,7 +9,7 @@ import (
 func TestSingleImport(t *testing.T) {
 	subject := Imports("C")
 	assert.NotNil(t, subject)
-	genDecl := subject.(*ast.GenDecl)
+	genDecl := subject
 	assert.Equal(t, 1, len(genDecl.Specs))
 	importSpec := genDecl.Specs[0].(*ast.ImportSpec)
 	assert.Equal(t, "\"C\"", importSpec.Path.Value)
@@ -18,6 +18,6 @@ func TestSingleImport(t *testing.T) {
 func TestMultipleImports(t *testing.T) {
 	subject := Imports("foo", "bar", "baz")
 	assert.NotNil(t, subject)
-	genDecl := subject.(*ast.GenDecl)
+	genDecl := subject
 	assert.Equal(t, 3, len(genDecl.Specs))
 }
