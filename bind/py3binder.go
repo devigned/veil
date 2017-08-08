@@ -9,22 +9,51 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+	"unicode"
 )
 
 const (
 	HEADER_FILE_NAME = "output.h"
 	PYTHON_FILE_NAME = "generated.py"
-	PYTHON_TEMPLATE  = `
-import os
+	PYTHON_TEMPLATE  = `import os
 import sys
 import cffi as _cffi_backend
 
 _PY3 = sys.version_info[0] == 3
 
 ffi = _cffi_backend.FFI()
-ffi.cdef("""
-{{.CDef}}
-""")
+ffi.cdef("""{{.CDef}}""")
+
+
+class _CffiHelper(object):
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    lib = ffi.dlopen(os.path.join(here, "output"))
+
+    @staticmethod
+    def error_string(err):
+        ptr = ffi.cast("void *", err)
+        return _CffiHelper.lib.cgo_error_to_string(ptr)
+
+    @staticmethod
+    def c2py_string(s):
+        pystr = ffi.string(s)
+        _CffiHelper.lib.cgo_cfree(s)
+        if _PY3:
+            pystr = pystr.decode('utf-8')
+        return pystr
+
+
+# Globally defined functions
+{{range $_, $func := .Funcs}}
+def {{$func.Name}}({{$func.PrintArgs}}):
+    {{range $_, $func := .Funcs}}
+
+    {{end}}
+    pass
+
+{{end}}
+
 `
 )
 
@@ -43,12 +72,17 @@ var (
 var pythonTemplate *template.Template
 
 func init() {
-	if tmpl, err := template.New("codeTemplate").Parse(PYTHON_TEMPLATE); err != nil {
+	replacedTabsTemplate := removeTabs(PYTHON_TEMPLATE)
+	if tmpl, err := template.New("codeTemplate").Parse(replacedTabsTemplate); err != nil {
 		panic(err)
 
 	} else {
 		pythonTemplate = tmpl
 	}
+}
+
+func removeTabs(src string) string {
+	return strings.Replace(src, "\t", "  ", -1)
 }
 
 // Py3Binder contains the data for generating a python 3 binding
@@ -57,7 +91,17 @@ type Py3Binder struct {
 }
 
 type PyTemplateData struct {
-	CDef string
+	CDef  string
+	Funcs []*PyFunc
+}
+
+type PyFunc struct {
+	Name      string
+	Arguments []string
+}
+
+func (p PyFunc) PrintArgs() string {
+	return strings.Join(p.Arguments, ", ")
 }
 
 // NewPy3Binder creates a new Binder for Python 3
@@ -75,7 +119,10 @@ func (p Py3Binder) Bind(outDir string) error {
 		return core.NewSystemErrorF("Failed to generate Python CDefs: %v", err)
 	}
 
-	data := PyTemplateData{CDef: strings.Join(cdefText, "\n")}
+	data := PyTemplateData{
+		CDef:  strings.Join(cdefText, "\n"),
+		Funcs: p.Funcs(),
+	}
 
 	f, err := os.Create(path.Join(outDir, PYTHON_FILE_NAME))
 	if err != nil {
@@ -89,6 +136,25 @@ func (p Py3Binder) Bind(outDir string) error {
 	w.Flush()
 
 	return nil
+}
+
+func (p Py3Binder) Funcs() []*PyFunc {
+	funcs := make([]*PyFunc, len(p.pkg.Funcs()))
+
+	for idx, f := range p.pkg.Funcs() {
+
+		argNames := make([]string, f.Signature().Params().Len())
+		for i := 0; i < f.Signature().Params().Len(); i++ {
+			param := f.Signature().Params().At(i)
+			argNames[i] = ToSnake(param.Name())
+		}
+
+		funcs[idx] = &PyFunc{
+			Name:      ToSnake(f.Name()),
+			Arguments: argNames,
+		}
+	}
+	return funcs
 }
 
 func (p Py3Binder) cDefText(headerPath string) ([]string, error) {
@@ -123,6 +189,7 @@ func (p Py3Binder) cDefText(headerPath string) ([]string, error) {
 							text = value.ReplaceAllString(text, key)
 						}
 					}
+					text = removeTabs(text)
 					filteredHeaders = append(filteredHeaders, text)
 				}
 			}
@@ -142,4 +209,22 @@ func (p Py3Binder) cDefText(headerPath string) ([]string, error) {
 	} else {
 		return nil, core.NewSystemError(err)
 	}
+}
+
+// ToSnake convert the given string to snake case following the Golang format:
+// acronyms are converted to lower-case and preceded by an underscore.
+// via: https://gist.github.com/elwinar/14e1e897fdbe4d3432e1
+func ToSnake(in string) string {
+	runes := []rune(in)
+	length := len(runes)
+
+	var out []rune
+	for i := 0; i < length; i++ {
+		if i > 0 && unicode.IsUpper(runes[i]) && ((i+1 < length && unicode.IsLower(runes[i+1])) || unicode.IsLower(runes[i-1])) {
+			out = append(out, '_')
+		}
+		out = append(out, unicode.ToLower(runes[i]))
+	}
+
+	return string(out)
 }

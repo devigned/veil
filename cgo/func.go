@@ -16,6 +16,11 @@ func (f Func) Underlying() types.Type {
 	return f.Func.Type()
 }
 
+func (f Func) Signature() *types.Signature {
+	sig, _ := f.Underlying().(*types.Signature)
+	return sig
+}
+
 // Underlying returns the string representation of the type (types.Type)
 func (f Func) String() string {
 	return f.Func.FullName() + ": " + types.TypeString(f.Underlying(), nil)

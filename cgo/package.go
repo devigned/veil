@@ -77,11 +77,11 @@ func NewPackage(pkgPath string, workDir string) (*Package, error) {
 	return veilPkg, nil
 }
 
-func (p Package) Funcs() []types.Func {
+func (p Package) Funcs() []Func {
 	values := p.funcs.Values()
-	output := make([]types.Func, len(values))
+	output := make([]Func, len(values))
 	for i, item := range values {
-		output[i] = item.(types.Func)
+		output[i] = item.(Func)
 	}
 	return output
 }
