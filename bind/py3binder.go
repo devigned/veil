@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"github.com/devigned/veil/cgo"
 	"github.com/devigned/veil/core"
+	"go/types"
+	"log"
 	"os"
+	"os/exec"
 	"path"
 	"regexp"
 	"strings"
@@ -47,10 +50,10 @@ class _CffiHelper(object):
 # Globally defined functions
 {{range $_, $func := .Funcs}}
 def {{$func.Name}}({{$func.PrintArgs}}):
-    {{range $_, $func := .Funcs}}
-
-    {{end}}
-    pass
+    {{ range $_, $inTrx := $func.InputTransforms -}}
+      {{ $inTrx }}
+    {{ end -}}
+    return _CffiHelper.lib.{{$func.Call}}
 
 {{end}}
 
@@ -95,13 +98,44 @@ type PyTemplateData struct {
 	Funcs []*PyFunc
 }
 
-type PyFunc struct {
-	Name      string
-	Arguments []string
+type PyParam struct {
+	underlying     *types.Var
+	InputTransform string
 }
 
-func (p PyFunc) PrintArgs() string {
-	return strings.Join(p.Arguments, ", ")
+func NewPyParam(v *types.Var) *PyParam {
+	return &PyParam{underlying: v}
+}
+
+func (p PyParam) HasInputTransform() bool {
+	return p.InputTransform != ""
+}
+
+func (p PyParam) Name() string {
+	return ToSnake(p.underlying.Name())
+}
+
+type PyFunc struct {
+	fun    cgo.Func
+	Name   string
+	Params []*PyParam
+}
+
+func (f PyFunc) InputTransforms() []string {
+	// TODO: add input transformations
+	return []string{}
+}
+
+func (f PyFunc) Call() string {
+	return f.fun.CGoName() + "(" + f.PrintArgs() + ")"
+}
+
+func (f PyFunc) PrintArgs() string {
+	names := make([]string, len(f.Params))
+	for i := 0; i < len(names); i++ {
+		names[i] = f.Params[i].Name()
+	}
+	return strings.Join(names, ", ")
 }
 
 // NewPy3Binder creates a new Binder for Python 3
@@ -124,16 +158,18 @@ func (p Py3Binder) Bind(outDir string) error {
 		Funcs: p.Funcs(),
 	}
 
-	f, err := os.Create(path.Join(outDir, PYTHON_FILE_NAME))
+	pythonFilePath := path.Join(outDir, PYTHON_FILE_NAME)
+	f, err := os.Create(pythonFilePath)
 	if err != nil {
 		return core.NewSystemErrorF("Unable to create %s", path.Join(outDir, PYTHON_FILE_NAME))
 	}
 
-	defer f.Close()
-
 	w := bufio.NewWriter(f)
 	pythonTemplate.Execute(w, data)
 	w.Flush()
+	f.Close()
+
+	PyFormat(pythonFilePath)
 
 	return nil
 }
@@ -143,15 +179,16 @@ func (p Py3Binder) Funcs() []*PyFunc {
 
 	for idx, f := range p.pkg.Funcs() {
 
-		argNames := make([]string, f.Signature().Params().Len())
+		pyParams := make([]*PyParam, f.Signature().Params().Len())
 		for i := 0; i < f.Signature().Params().Len(); i++ {
 			param := f.Signature().Params().At(i)
-			argNames[i] = ToSnake(param.Name())
+			pyParams[i] = NewPyParam(param)
 		}
 
 		funcs[idx] = &PyFunc{
-			Name:      ToSnake(f.Name()),
-			Arguments: argNames,
+			fun:    f,
+			Name:   ToSnake(f.Name()),
+			Params: pyParams,
 		}
 	}
 	return funcs
@@ -227,4 +264,14 @@ func ToSnake(in string) string {
 	}
 
 	return string(out)
+}
+
+func PyFormat(path string) {
+	which := exec.Command("which", "yapf")
+	if err := which.Run(); err == nil {
+		cmd := exec.Command("yapf", "-i", "--style={based_on_style: pep8, column_limit: 100}", path)
+		err = cmd.Run()
+	} else {
+		log.Println("To format your Python code run `pip install yapf`")
+	}
 }
