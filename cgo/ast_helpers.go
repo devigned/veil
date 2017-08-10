@@ -32,6 +32,11 @@ var (
 		Sel: NewIdent("UUID"),
 	}
 
+	cBytesType = &ast.SelectorExpr{
+		X:   NewIdent("C"),
+		Sel: NewIdent("CBytes"),
+	}
+
 	uintptr = NewIdent("uintptr")
 )
 
@@ -211,6 +216,20 @@ func refLockUnlockDefer() []ast.Stmt {
 				Fun: &ast.SelectorExpr{
 					X:   refsVar,
 					Sel: NewIdent("Unlock"),
+				},
+			},
+		},
+	}
+}
+
+func UuidToCBytes(uuidExpr ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun: cBytesType,
+		Args: []ast.Expr{
+			&ast.CallExpr{
+				Fun: &ast.SelectorExpr{
+					X:   uuidExpr,
+					Sel: NewIdent("Bytes"),
 				},
 			},
 		},
@@ -744,6 +763,7 @@ func ErrorToString() ast.Decl {
 
 	// func cgo_error_to_string(self unsafe.Pointer) string {
 	return &ast.FuncDecl{
+		Doc:  &ast.CommentGroup{List: ExportComments(ERROR_TO_STRING_FUNC_NAME)},
 		Name: NewIdent(ERROR_TO_STRING_FUNC_NAME),
 		Type: &ast.FuncType{
 			Params: InstanceMethodParams(),
@@ -823,6 +843,9 @@ func ErrorToString() ast.Decl {
 
 func IsErrorNil() ast.Decl {
 	self := NewIdent("self")
+	uid := NewIdent("uid")
+	ptr := NewIdent("ptr")
+	err := NewIdent("err")
 
 	// func cgo_error_is_nil(self unsafe.Pointer) string {
 	return &ast.FuncDecl{
@@ -840,10 +863,50 @@ func IsErrorNil() ast.Decl {
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
+				// uid := cgo_get_uuid_from_ptr(self)
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						uid,
+					},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{
+						&ast.CallExpr{
+							Fun: NewIdent(GET_UUID_FROM_PTR_NAME),
+							Args: []ast.Expr{
+								self,
+							},
+						},
+					},
+				},
+				// ptr := cgo_get_ref(uid)
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						ptr,
+					},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{
+						&ast.CallExpr{
+							Fun: NewIdent(GET_REF_FUNC_NAME),
+							Args: []ast.Expr{
+								uid,
+							},
+						},
+					},
+				},
+				// err := *(*error)(ptr)
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						err,
+					},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{
+						DeRef(CastUnsafePtr(DeRef(NewIdent("error")), ptr)),
+					},
+				},
 				// return (*(*error)(self)) == nil
 				Return(&ast.BinaryExpr{
 					Op: token.EQL,
-					X:  DeRef(CastUnsafePtr(DeRef(NewIdent("error")), self)),
+					X:  err,
 					Y:  NewIdent("nil"),
 				}),
 			},
@@ -1068,12 +1131,10 @@ func FuncAst(f *Func) *ast.FuncDecl {
 				resultExprs[i] = resultNames[i]
 			case *types.Pointer:
 				// already have a pointer, so just count the reference
-				funcDecl.Body.List = append(funcDecl.Body.List, IncrementRefCall(resultNames[i]))
-				resultExprs[i] = UintPtr(ToUnsafePointer(resultNames[i]))
+				resultExprs[i] = UuidToCBytes(IncrementRefCall(resultNames[i]).X)
 			case *types.Named:
 				// grab a reference to the named type
-				funcDecl.Body.List = append(funcDecl.Body.List, IncrementRefCall(Ref(resultNames[i])))
-				resultExprs[i] = UintPtr(ToUnsafePointer(Ref(resultNames[i])))
+				resultExprs[i] = UuidToCBytes(IncrementRefCall(Ref(resultNames[i])).X)
 			}
 		}
 
@@ -1158,19 +1219,19 @@ func Fields(funcParams *types.Tuple) *ast.FieldList {
 		p := funcParams.At(i)
 		switch t := p.Type().(type) {
 		case *types.Pointer:
-			fields[i] = UintPtrOrBasic(p, t.Elem())
+			fields[i] = UnsafePtrOrBasic(p, t.Elem())
 		default:
-			fields[i] = UintPtrOrBasic(p, t)
+			fields[i] = UnsafePtrOrBasic(p, t)
 		}
 	}
 	return &ast.FieldList{List: fields}
 }
 
-// UintPtrOrBasic returns a Basic typed field or an unsafe pointer if not a Basic type
-func UintPtrOrBasic(p *types.Var, t types.Type) *ast.Field {
+// UnsafePtrOrBasic returns a Basic typed field or an unsafe pointer if not a Basic type
+func UnsafePtrOrBasic(p *types.Var, t types.Type) *ast.Field {
 	returnDefault := func() *ast.Field {
 		return &ast.Field{
-			Type:  uintptr,
+			Type:  unsafePointer,
 			Names: []*ast.Ident{NewIdent(p.Name())},
 		}
 	}

@@ -2,7 +2,7 @@ package bind
 
 import (
 	"bufio"
-	"github.com/davecgh/go-spew/spew"
+	"fmt"
 	"github.com/devigned/veil/cgo"
 	"github.com/devigned/veil/core"
 	"go/types"
@@ -30,40 +30,43 @@ _PY3 = sys.version_info[0] == 3
 ffi = _cffi_backend.FFI()
 ffi.cdef("""{{.CDef}}""")
 
+{{ $cret := .ReturnVarName -}}
+{{ $cffiHelperName := .CffiHelperName -}}
 
-class {{.CffiHelperName}}(object):
+class {{$cffiHelperName}}(object):
 
     here = os.path.dirname(os.path.abspath(__file__))
     lib = ffi.dlopen(os.path.join(here, "output"))
 
     @staticmethod
     def error_string(ptr):
-        s = ffi.string(_CffiHelper.lib.cgo_error_to_string(ptr))
-        _CffiHelper.lib.cgo_cfree(ptr)
-        return s
+        return {{$cffiHelperName}}.c2py_string({{$cffiHelperName}}.lib.cgo_error_to_string(ptr))
 
     @staticmethod
     def handle_error(err):
     	ptr = ffi.cast("void *", err)
-    	if not _CffiHelper.lib.cgo_is_error_nil(ptr):
-          raise Exception(_CffiHelper.error_string(ptr))
+    	if not {{$cffiHelperName}}.lib.cgo_is_error_nil(ptr):
+          raise Exception({{$cffiHelperName}}.error_string(ptr))
 
     @staticmethod
     def c2py_string(s):
         pystr = ffi.string(s)
-        _CffiHelper.lib.cgo_cfree(s)
+        {{$cffiHelperName}}.lib.cgo_cfree(s)
         if _PY3:
             pystr = pystr.decode('utf-8')
         return pystr
 
-{{ $cret := .ReturnVarName -}}
+
 # Globally defined functions
 {{range $_, $func := .Funcs}}
 def {{$func.Name}}({{$func.PrintArgs}}):
     {{ range $_, $inTrx := $func.InputTransforms -}}
       {{ $inTrx }}
     {{ end -}}
-    {{$cret}} = _CffiHelper.lib.{{$func.Call}}
+    {{$cret}} = _CffiHelper.lib.{{$func.Call -}}
+    {{ range $idx, $result := $func.Results -}}
+      {{if $result.IsError}}{{ printf "%s.handle_error(%s.r%d)" $cffiHelperName $cret $idx }}{{end}}
+    {{ end -}}
     return {{$func.PrintReturns}}
 
 {{end}}
@@ -72,12 +75,12 @@ def {{$func.Name}}({{$func.PrintArgs}}):
 )
 
 var (
-	startCGoDefine  = regexp.MustCompile(`^#define GO_CGO_PROLOGUE_H`)
+	startCGoDefine  = regexp.MustCompile(`^typedef`)
 	sizeOfRemove    = regexp.MustCompile(`_check_for_64_bit_pointer_matching_GoInt`)
 	complexRemove   = regexp.MustCompile(`_Complex`)
 	endif           = regexp.MustCompile(`^#endif`)
 	endOfCGoDefine  = regexp.MustCompile(`^#ifdef __cplusplus`)
-	extern          = regexp.MustCompile(`^extern`)
+	extern          = regexp.MustCompile(`^extern \w`)
 	sizeTypeReplace = regexp.MustCompile(`__SIZE_TYPE__`)
 	removeFilters   = []*regexp.Regexp{sizeOfRemove, complexRemove}
 	replaceFilters  = map[string]*regexp.Regexp{"size_t": sizeTypeReplace}
@@ -128,6 +131,10 @@ func (p PyParam) Name() string {
 	return ToSnake(p.underlying.Name())
 }
 
+func (p PyParam) IsError() bool {
+	return cgo.ImplementsError(p.underlying.Type())
+}
+
 type PyFunc struct {
 	fun     cgo.Func
 	Name    string
@@ -157,7 +164,7 @@ func (f PyFunc) PrintReturns() string {
 		names := []string{}
 		for i := 0; i < len(f.Results); i++ {
 			if !cgo.ImplementsError(f.Results[i].underlying.Type()) {
-				names = append(names, spew.Sprintf(RETURN_VAR_NAME+".r%d", i))
+				names = append(names, fmt.Sprintf(RETURN_VAR_NAME+".r%d", i))
 			}
 		}
 		return strings.Join(names, ", ")
@@ -243,6 +250,10 @@ func (p Py3Binder) cDefText(headerPath string) ([]string, error) {
 		for scanner.Scan() {
 			text := scanner.Text()
 
+			if !recording && (startCGoDefine.MatchString(text) || extern.MatchString(text)) {
+				recording = true
+			}
+
 			if recording {
 				if endif.MatchString(text) || endOfCGoDefine.MatchString(text) {
 					recording = false
@@ -266,10 +277,6 @@ func (p Py3Binder) cDefText(headerPath string) ([]string, error) {
 					text = removeTabs(text)
 					filteredHeaders = append(filteredHeaders, text)
 				}
-			}
-
-			if !recording && (startCGoDefine.MatchString(text) || extern.MatchString(text)) {
-				recording = true
 			}
 		}
 
