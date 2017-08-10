@@ -16,6 +16,7 @@ import (
 )
 
 const (
+	CFFI_HELPER_NAME = "_CffiHelper"
 	HEADER_FILE_NAME = "output.h"
 	PYTHON_FILE_NAME = "generated.py"
 	PYTHON_TEMPLATE  = `import os
@@ -28,15 +29,22 @@ ffi = _cffi_backend.FFI()
 ffi.cdef("""{{.CDef}}""")
 
 
-class _CffiHelper(object):
+class {{.CffiHelperName}}(object):
 
     here = os.path.dirname(os.path.abspath(__file__))
     lib = ffi.dlopen(os.path.join(here, "output"))
 
     @staticmethod
-    def error_string(err):
-        ptr = ffi.cast("void *", err)
-        return _CffiHelper.lib.cgo_error_to_string(ptr)
+    def error_string(ptr):
+        s = ffi.string(_CffiHelper.lib.cgo_error_to_string(ptr))
+        _CffiHelper.lib.cgo_cfree(ptr)
+        return s
+
+    @staticmethod
+    def handle_error(err):
+    	ptr = ffi.cast("void *", err)
+    	if not _CffiHelper.lib.cgo_is_error_nil(ptr):
+          raise Exception(_CffiHelper.error_string(ptr))
 
     @staticmethod
     def c2py_string(s):
@@ -94,8 +102,9 @@ type Py3Binder struct {
 }
 
 type PyTemplateData struct {
-	CDef  string
-	Funcs []*PyFunc
+	CDef           string
+	Funcs          []*PyFunc
+	CffiHelperName string
 }
 
 type PyParam struct {
@@ -154,8 +163,9 @@ func (p Py3Binder) Bind(outDir string) error {
 	}
 
 	data := PyTemplateData{
-		CDef:  strings.Join(cdefText, "\n"),
-		Funcs: p.Funcs(),
+		CDef:           strings.Join(cdefText, "\n"),
+		Funcs:          p.Funcs(),
+		CffiHelperName: CFFI_HELPER_NAME,
 	}
 
 	pythonFilePath := path.Join(outDir, PYTHON_FILE_NAME)

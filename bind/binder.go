@@ -88,15 +88,17 @@ func toCodeFile(pkg *cgo.Package) *ast.File {
 	}
 	declarations := []ast.Decl{
 		cImport,
-		cgo.Imports("fmt", "sync", "unsafe"), //, "strconv", "strings", "os"
+		cgo.Imports("fmt", "sync", "unsafe", "github.com/satori/go.uuid"), //, "strconv", "strings", "os"
 		cgo.ImportsFromMap(pkg.ImportAliases()),
 		cgo.RefsStruct(),
 		cgo.CObjectStruct(),
 		cgo.DecrementRef(),
 		cgo.IncrementRef(),
+		cgo.GetRef(),
 		cgo.Init(),
 		cgo.ErrorToString(),
 		cgo.CFree(),
+		cgo.IsErrorNil(),
 	}
 
 	declarations = append(declarations, pkg.ToAst()...)
@@ -120,7 +122,6 @@ package main
 import (
 	"C"
 )
-
 		`
 
 	fset := token.NewFileSet() // positions are relative to fset
