@@ -10,6 +10,7 @@ import (
 
 const (
 	GET_REF_FUNC_NAME         = "cgo_get_ref"
+	GET_UUID_FROM_PTR_NAME    = "cgo_get_uuid_from_ptr"
 	INCREMENT_REF_FUNC_NAME   = "cgo_incref"
 	DECREMENT_REF_FUNC_NAME   = "cgo_decref"
 	ERROR_TO_STRING_FUNC_NAME = "cgo_error_to_string"
@@ -211,6 +212,73 @@ func refLockUnlockDefer() []ast.Stmt {
 					X:   refsVar,
 					Sel: NewIdent("Unlock"),
 				},
+			},
+		},
+	}
+}
+
+func GetUuidFromPtr() ast.Decl {
+	bytes := NewIdent("bytes")
+	uid := NewIdent("uid")
+
+	// func cgo_get_uuid_from_ptr(self unsafe.Pointer) uuid.UUID
+	return &ast.FuncDecl{
+		Name: NewIdent(GET_UUID_FROM_PTR_NAME),
+		Type: &ast.FuncType{
+			Params: InstanceMethodParams(),
+			Results: &ast.FieldList{
+				List: []*ast.Field{
+					{
+						Type: uuidType,
+					},
+				},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				// bytes := C.GoBytes(self, 16)
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						bytes,
+					},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{
+						&ast.CallExpr{
+							Fun: &ast.SelectorExpr{
+								X:   NewIdent("C"),
+								Sel: NewIdent("GoBytes"),
+							},
+							Args: []ast.Expr{
+								NewIdent("self"),
+								&ast.BasicLit{
+									Kind:  token.INT,
+									Value: "16",
+								},
+							},
+						},
+					},
+				},
+				// uid, _ := uuid.FromBytes(bytes)
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						uid,
+						NewIdent("_"),
+					},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{
+						&ast.CallExpr{
+							Fun: &ast.SelectorExpr{
+								X:   NewIdent("uuid"),
+								Sel: NewIdent("FromBytes"),
+							},
+							Args: []ast.Expr{
+								bytes,
+							},
+						},
+					},
+				},
+				// return uid
+				Return(uid),
 			},
 		},
 	}
@@ -670,6 +738,9 @@ func GetRef() ast.Decl {
 
 func ErrorToString() ast.Decl {
 	self := NewIdent("self")
+	uid := NewIdent("uid")
+	ptr := NewIdent("ptr")
+	err := NewIdent("err")
 
 	// func cgo_error_to_string(self unsafe.Pointer) string {
 	return &ast.FuncDecl{
@@ -689,7 +760,47 @@ func ErrorToString() ast.Decl {
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
-				// return C.CString((*(*error)(self)).Error())
+				// uid := cgo_get_uuid_from_ptr(self)
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						uid,
+					},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{
+						&ast.CallExpr{
+							Fun: NewIdent(GET_UUID_FROM_PTR_NAME),
+							Args: []ast.Expr{
+								self,
+							},
+						},
+					},
+				},
+				// ptr := cgo_get_ref(uid)
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						ptr,
+					},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{
+						&ast.CallExpr{
+							Fun: NewIdent(GET_REF_FUNC_NAME),
+							Args: []ast.Expr{
+								uid,
+							},
+						},
+					},
+				},
+				// err := *(*error)(ptr)
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						err,
+					},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{
+						DeRef(CastUnsafePtr(DeRef(NewIdent("error")), ptr)),
+					},
+				},
+				// return C.CString(err.Error())
 				Return(&ast.CallExpr{
 					Fun: &ast.SelectorExpr{
 						X:   NewIdent("C"),
@@ -698,7 +809,7 @@ func ErrorToString() ast.Decl {
 					Args: []ast.Expr{
 						&ast.CallExpr{
 							Fun: &ast.SelectorExpr{
-								X:   DeRef(CastUnsafePtr(DeRef(NewIdent("error")), self)),
+								X:   err,
 								Sel: NewIdent("Error"),
 							},
 						},

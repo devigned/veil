@@ -2,6 +2,7 @@ package bind
 
 import (
 	"bufio"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/devigned/veil/cgo"
 	"github.com/devigned/veil/core"
 	"go/types"
@@ -16,6 +17,7 @@ import (
 )
 
 const (
+	RETURN_VAR_NAME  = "cret"
 	CFFI_HELPER_NAME = "_CffiHelper"
 	HEADER_FILE_NAME = "output.h"
 	PYTHON_FILE_NAME = "generated.py"
@@ -54,14 +56,15 @@ class {{.CffiHelperName}}(object):
             pystr = pystr.decode('utf-8')
         return pystr
 
-
+{{ $cret := .ReturnVarName -}}
 # Globally defined functions
 {{range $_, $func := .Funcs}}
 def {{$func.Name}}({{$func.PrintArgs}}):
     {{ range $_, $inTrx := $func.InputTransforms -}}
       {{ $inTrx }}
     {{ end -}}
-    return _CffiHelper.lib.{{$func.Call}}
+    {{$cret}} = _CffiHelper.lib.{{$func.Call}}
+    return {{$func.PrintReturns}}
 
 {{end}}
 
@@ -105,6 +108,7 @@ type PyTemplateData struct {
 	CDef           string
 	Funcs          []*PyFunc
 	CffiHelperName string
+	ReturnVarName  string
 }
 
 type PyParam struct {
@@ -125,9 +129,10 @@ func (p PyParam) Name() string {
 }
 
 type PyFunc struct {
-	fun    cgo.Func
-	Name   string
-	Params []*PyParam
+	fun     cgo.Func
+	Name    string
+	Params  []*PyParam
+	Results []*PyParam
 }
 
 func (f PyFunc) InputTransforms() []string {
@@ -145,6 +150,20 @@ func (f PyFunc) PrintArgs() string {
 		names[i] = f.Params[i].Name()
 	}
 	return strings.Join(names, ", ")
+}
+
+func (f PyFunc) PrintReturns() string {
+	if len(f.Results) > 1 {
+		names := []string{}
+		for i := 0; i < len(f.Results); i++ {
+			if !cgo.ImplementsError(f.Results[i].underlying.Type()) {
+				names = append(names, spew.Sprintf(RETURN_VAR_NAME+".r%d", i))
+			}
+		}
+		return strings.Join(names, ", ")
+	} else {
+		return RETURN_VAR_NAME
+	}
 }
 
 // NewPy3Binder creates a new Binder for Python 3
@@ -166,6 +185,7 @@ func (p Py3Binder) Bind(outDir string) error {
 		CDef:           strings.Join(cdefText, "\n"),
 		Funcs:          p.Funcs(),
 		CffiHelperName: CFFI_HELPER_NAME,
+		ReturnVarName:  RETURN_VAR_NAME,
 	}
 
 	pythonFilePath := path.Join(outDir, PYTHON_FILE_NAME)
@@ -195,10 +215,17 @@ func (p Py3Binder) Funcs() []*PyFunc {
 			pyParams[i] = NewPyParam(param)
 		}
 
+		pyResults := make([]*PyParam, f.Signature().Results().Len())
+		for i := 0; i < f.Signature().Results().Len(); i++ {
+			param := f.Signature().Results().At(i)
+			pyResults[i] = NewPyParam(param)
+		}
+
 		funcs[idx] = &PyFunc{
-			fun:    f,
-			Name:   ToSnake(f.Name()),
-			Params: pyParams,
+			fun:     f,
+			Name:    ToSnake(f.Name()),
+			Params:  pyParams,
+			Results: pyResults,
 		}
 	}
 	return funcs

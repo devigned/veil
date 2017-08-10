@@ -95,6 +95,7 @@ func toCodeFile(pkg *cgo.Package) *ast.File {
 		cgo.DecrementRef(),
 		cgo.IncrementRef(),
 		cgo.GetRef(),
+		cgo.GetUuidFromPtr(),
 		cgo.Init(),
 		cgo.ErrorToString(),
 		cgo.CFree(),
