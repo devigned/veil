@@ -365,17 +365,32 @@ func DecrementRef() ast.Decl {
 	refsField := NewIdent(REFS_STRUCT_FIELD_NAME)
 	uid := NewIdent("uid")
 	ok := NewIdent("ok")
-	s := NewIdent("s")
+	cobj := NewIdent("cobj")
 	ptrs := NewIdent("ptrs")
 	cnt := NewIdent("cnt")
 	del := NewIdent("delete")
 
 	statements := refLockUnlockDefer()
 	statements = append(statements,
-		// uid, ok := refs.refs[ptr]
+		// uid := cgo_get_uuid_from_ptr(ptr)
 		&ast.AssignStmt{
 			Lhs: []ast.Expr{
 				uid,
+			},
+			Tok: token.DEFINE,
+			Rhs: []ast.Expr{
+				&ast.CallExpr{
+					Fun: NewIdent(GET_UUID_FROM_PTR_NAME),
+					Args: []ast.Expr{
+						ptr,
+					},
+				},
+			},
+		},
+		// cobj, ok := refs.ptrs[uid]
+		&ast.AssignStmt{
+			Lhs: []ast.Expr{
+				cobj,
 				ok,
 			},
 			Tok: token.DEFINE,
@@ -383,9 +398,9 @@ func DecrementRef() ast.Decl {
 				&ast.IndexExpr{
 					X: &ast.SelectorExpr{
 						X:   refsType,
-						Sel: refsField,
+						Sel: ptrs,
 					},
-					Index: ptr,
+					Index: uid,
 				},
 			},
 		},
@@ -410,26 +425,12 @@ func DecrementRef() ast.Decl {
 			},
 		},
 		// }
-		// s := refs.ptrs[uid]
-		&ast.AssignStmt{
-			Lhs: []ast.Expr{s},
-			Tok: token.DEFINE,
-			Rhs: []ast.Expr{
-				&ast.IndexExpr{
-					X: &ast.SelectorExpr{
-						X:   refsType,
-						Sel: ptrs,
-					},
-					Index: uid,
-				},
-			},
-		},
-		// if s.cnt -1 <= 0 {
+		// if cobj.cnt -1 <= 0 {
 		&ast.IfStmt{
 			Cond: &ast.BinaryExpr{
 				X: &ast.BinaryExpr{
 					X: &ast.SelectorExpr{
-						X:   s,
+						X:   cobj,
 						Sel: cnt,
 					},
 					Op: token.SUB,
@@ -453,7 +454,7 @@ func DecrementRef() ast.Decl {
 							},
 						},
 					},
-					// delete(refs.refs, ptr)
+					// delete(cobj.refs, ptr)
 					&ast.ExprStmt{
 						X: &ast.CallExpr{
 							Fun: del,
@@ -462,7 +463,10 @@ func DecrementRef() ast.Decl {
 									X:   refsType,
 									Sel: refsField,
 								},
-								ptr,
+								&ast.SelectorExpr{
+									X:   cobj,
+									Sel: ptr,
+								},
 							},
 						},
 					},
@@ -471,7 +475,7 @@ func DecrementRef() ast.Decl {
 			},
 		},
 		// }
-		// refs.ptrs[uid] = cobject{s.ptr, s.cnt - 1}
+		// refs.ptrs[uid] = cobject{cobj.ptr, cobj.cnt - 1}
 		&ast.AssignStmt{
 			Lhs: []ast.Expr{
 				&ast.IndexExpr{
@@ -488,12 +492,12 @@ func DecrementRef() ast.Decl {
 					Type: NewIdent(COBJECT_STRUCT_TYPE_NAME),
 					Elts: []ast.Expr{
 						&ast.SelectorExpr{
-							X:   s,
+							X:   cobj,
 							Sel: ptr,
 						},
 						&ast.BinaryExpr{
 							X: &ast.SelectorExpr{
-								X:   s,
+								X:   cobj,
 								Sel: NewIdent("cnt"),
 							},
 							Op: token.SUB,
@@ -505,6 +509,7 @@ func DecrementRef() ast.Decl {
 		})
 
 	return &ast.FuncDecl{
+		Doc:  &ast.CommentGroup{List: ExportComments(DECREMENT_REF_FUNC_NAME)},
 		Name: NewIdent(DECREMENT_REF_FUNC_NAME),
 		Type: &ast.FuncType{
 			Params: &ast.FieldList{

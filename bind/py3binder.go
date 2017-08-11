@@ -33,28 +33,57 @@ ffi.cdef("""{{.CDef}}""")
 {{ $cret := .ReturnVarName -}}
 {{ $cffiHelperName := .CffiHelperName -}}
 
-class {{$cffiHelperName}}(object):
+class _CffiHelper(object):
 
     here = os.path.dirname(os.path.abspath(__file__))
     lib = ffi.dlopen(os.path.join(here, "output"))
 
     @staticmethod
     def error_string(ptr):
-        return {{$cffiHelperName}}.c2py_string({{$cffiHelperName}}.lib.cgo_error_to_string(ptr))
+        return _CffiHelper.c2py_string(_CffiHelper.lib.cgo_error_to_string(ptr))
+
+    @staticmethod
+    def cgo_free(ptr):
+        return _CffiHelper.lib.cgo_cfree(ptr)
+
+    @staticmethod
+    def cgo_decref(ptr):
+        return _CffiHelper.lib.cgo_decref(ptr)
 
     @staticmethod
     def handle_error(err):
-    	ptr = ffi.cast("void *", err)
-    	if not {{$cffiHelperName}}.lib.cgo_is_error_nil(ptr):
-          raise Exception({{$cffiHelperName}}.error_string(ptr))
+        ptr = ffi.cast("void *", err)
+        if not _CffiHelper.lib.cgo_is_error_nil(ptr):
+            raise Exception(_CffiHelper.error_string(ptr))
 
     @staticmethod
     def c2py_string(s):
         pystr = ffi.string(s)
-        {{$cffiHelperName}}.lib.cgo_cfree(s)
+        _CffiHelper.lib.cgo_cfree(s)
         if _PY3:
             pystr = pystr.decode('utf-8')
         return pystr
+
+
+class VeilObject(object):
+    def __init__(self, uuid_ptr):
+        self.uuid_ptr = uuid_ptr
+
+    def __del__(self):
+        print("deleting obj")
+        _CffiHelper.cgo_decref(self.uuid_ptr)
+        print("deleted obj")
+
+
+class VeilError(Exception):
+    def __init__(self, uuid_ptr):
+        self.veil_obj = VeilObject(uuid_ptr=uuid_ptr)
+        message = _CffiHelper.error_string(uuid_ptr)
+        super(VeilError, self).__init__(message)
+
+    @staticmethod
+    def is_nil(uuid_ptr):
+        return _CffiHelper.lib.cgo_is_error_nil(uuid_ptr)
 
 
 # Globally defined functions
@@ -65,7 +94,10 @@ def {{$func.Name}}({{$func.PrintArgs}}):
     {{ end -}}
     {{$cret}} = _CffiHelper.lib.{{$func.Call -}}
     {{ range $idx, $result := $func.Results -}}
-      {{if $result.IsError}}{{ printf "%s.handle_error(%s.r%d)" $cffiHelperName $cret $idx }}{{end}}
+		{{if $result.IsError -}}
+			if not VeilError.is_nil(cret.r1):
+				{{ printf "raise VeilError(%s.r%d)" $cret $idx -}}
+		{{end}}
     {{ end -}}
     return {{$func.PrintReturns}}
 
