@@ -37,6 +37,16 @@ var (
 		Sel: NewIdent("CBytes"),
 	}
 
+	cStringType = &ast.SelectorExpr{
+		X:   NewIdent("C"),
+		Sel: NewIdent("CString"),
+	}
+
+	charStarType = DeRef(&ast.SelectorExpr{
+		X:   NewIdent("C"),
+		Sel: NewIdent("char"),
+	})
+
 	uintptr = NewIdent("uintptr")
 )
 
@@ -123,15 +133,14 @@ func NewAst(functionName string, goType ast.Expr) ast.Decl {
 		Type: &ast.FuncType{
 			Results: &ast.FieldList{
 				List: []*ast.Field{
-					{Type: uintptr},
+					{Type: unsafePointer},
 				},
 			},
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
 				DeclareVar(localVarIdent, goType),
-				IncrementRefCall(target),
-				Return(UintPtr(ToUnsafePointer(target))),
+				Return(UuidToCBytes(IncrementRefCall(target))),
 			},
 		},
 	}
@@ -142,10 +151,7 @@ func NewAst(functionName string, goType ast.Expr) ast.Decl {
 // StringAst produces the []ast.Decl to provide a string representation of the slice
 func StringAst(functionName string, goType ast.Expr) ast.Decl {
 	selfIdent := NewIdent("self")
-	stringIdent := NewIdent("string")
-
-	castExpression := CastUnsafePtr(DeRef(goType), selfIdent)
-	deRef := DeRef(castExpression)
+	deRef := DeRef(CastUnsafePtrOfTypeUuid(DeRef(goType), selfIdent))
 	sprintf := FormatSprintf("%#v", deRef)
 
 	funcDecl := &ast.FuncDecl{
@@ -164,33 +170,18 @@ func StringAst(functionName string, goType ast.Expr) ast.Decl {
 			},
 			Results: &ast.FieldList{
 				List: []*ast.Field{
-					{Type: stringIdent},
+					{Type: charStarType},
 				},
 			},
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
-				Return(sprintf),
-			},
-		},
-	}
-
-	return funcDecl
-}
-
-// DestroyAst produces the []ast.Decl to destruct a slice type and decrement it's reference count
-func DestroyAst(functionName string) ast.Decl {
-	funcDecl := &ast.FuncDecl{
-		Doc: &ast.CommentGroup{
-			List: ExportComments(functionName),
-		},
-		Name: NewIdent(functionName),
-		Type: &ast.FuncType{
-			Params: InstanceMethodParams(),
-		},
-		Body: &ast.BlockStmt{
-			List: []ast.Stmt{
-				DecrementRefCall(NewIdent("self")),
+				Return(&ast.CallExpr{
+					Fun: cStringType,
+					Args: []ast.Expr{
+						sprintf,
+					},
+				}),
 			},
 		},
 	}
@@ -762,8 +753,6 @@ func GetRef() ast.Decl {
 
 func ErrorToString() ast.Decl {
 	self := NewIdent("self")
-	uid := NewIdent("uid")
-	ptr := NewIdent("ptr")
 	err := NewIdent("err")
 
 	// func cgo_error_to_string(self unsafe.Pointer) string {
@@ -785,61 +774,24 @@ func ErrorToString() ast.Decl {
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
-				// uid := cgo_get_uuid_from_ptr(self)
-				&ast.AssignStmt{
-					Lhs: []ast.Expr{
-						uid,
-					},
-					Tok: token.DEFINE,
-					Rhs: []ast.Expr{
-						&ast.CallExpr{
-							Fun: NewIdent(GET_UUID_FROM_PTR_NAME),
-							Args: []ast.Expr{
-								self,
-							},
-						},
-					},
-				},
-				// ptr := cgo_get_ref(uid)
-				&ast.AssignStmt{
-					Lhs: []ast.Expr{
-						ptr,
-					},
-					Tok: token.DEFINE,
-					Rhs: []ast.Expr{
-						&ast.CallExpr{
-							Fun: NewIdent(GET_REF_FUNC_NAME),
-							Args: []ast.Expr{
-								uid,
-							},
-						},
-					},
-				},
-				// err := *(*error)(ptr)
+				// err := *(*error)(cgo_get_ref(cgo_get_uuid_from_ptr(ptr)))
 				&ast.AssignStmt{
 					Lhs: []ast.Expr{
 						err,
 					},
 					Tok: token.DEFINE,
 					Rhs: []ast.Expr{
-						DeRef(CastUnsafePtr(DeRef(NewIdent("error")), ptr)),
+						DeRef(CastUnsafePtrOfTypeUuid(DeRef(NewIdent("error")), self)),
 					},
 				},
 				// return C.CString(err.Error())
-				Return(&ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   NewIdent("C"),
-						Sel: NewIdent("CString"),
-					},
-					Args: []ast.Expr{
-						&ast.CallExpr{
-							Fun: &ast.SelectorExpr{
-								X:   err,
-								Sel: NewIdent("Error"),
-							},
+				Return(ToCString(
+					&ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   err,
+							Sel: NewIdent("Error"),
 						},
-					},
-				}),
+					})),
 			},
 		},
 	}
@@ -848,8 +800,6 @@ func ErrorToString() ast.Decl {
 
 func IsErrorNil() ast.Decl {
 	self := NewIdent("self")
-	uid := NewIdent("uid")
-	ptr := NewIdent("ptr")
 	err := NewIdent("err")
 
 	// func cgo_error_is_nil(self unsafe.Pointer) string {
@@ -868,44 +818,14 @@ func IsErrorNil() ast.Decl {
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
-				// uid := cgo_get_uuid_from_ptr(self)
-				&ast.AssignStmt{
-					Lhs: []ast.Expr{
-						uid,
-					},
-					Tok: token.DEFINE,
-					Rhs: []ast.Expr{
-						&ast.CallExpr{
-							Fun: NewIdent(GET_UUID_FROM_PTR_NAME),
-							Args: []ast.Expr{
-								self,
-							},
-						},
-					},
-				},
-				// ptr := cgo_get_ref(uid)
-				&ast.AssignStmt{
-					Lhs: []ast.Expr{
-						ptr,
-					},
-					Tok: token.DEFINE,
-					Rhs: []ast.Expr{
-						&ast.CallExpr{
-							Fun: NewIdent(GET_REF_FUNC_NAME),
-							Args: []ast.Expr{
-								uid,
-							},
-						},
-					},
-				},
-				// err := *(*error)(ptr)
+				// err := *(*error)(cgo_get_ref(cgo_get_uuid_from_ptr(ptr)))
 				&ast.AssignStmt{
 					Lhs: []ast.Expr{
 						err,
 					},
 					Tok: token.DEFINE,
 					Rhs: []ast.Expr{
-						DeRef(CastUnsafePtr(DeRef(NewIdent("error")), ptr)),
+						DeRef(CastUnsafePtrOfTypeUuid(DeRef(NewIdent("error")), self)),
 					},
 				},
 				// return (*(*error)(self)) == nil
@@ -951,6 +871,26 @@ func CFree() ast.Decl {
 	// }
 }
 
+func ToCString(targets ...ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   NewIdent("C"),
+			Sel: NewIdent("CString"),
+		},
+		Args: targets,
+	}
+}
+
+func ToGoString(targets ...ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   NewIdent("C"),
+			Sel: NewIdent("GoString"),
+		},
+		Args: targets,
+	}
+}
+
 func ToUnsafePointer(targets ...ast.Expr) ast.Expr {
 	return &ast.CallExpr{
 		Fun:  unsafePointer,
@@ -959,12 +899,10 @@ func ToUnsafePointer(targets ...ast.Expr) ast.Expr {
 }
 
 // IncrementRefCall takes a target expression to increment it's cgo pointer ref and returns the expression
-func IncrementRefCall(target ast.Expr) *ast.ExprStmt {
-	return &ast.ExprStmt{
-		X: &ast.CallExpr{
-			Fun:  NewIdent(INCREMENT_REF_FUNC_NAME),
-			Args: []ast.Expr{ToUnsafePointer(target)},
-		},
+func IncrementRefCall(target ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun:  NewIdent(INCREMENT_REF_FUNC_NAME),
+		Args: []ast.Expr{ToUnsafePointer(target)},
 	}
 }
 
@@ -1007,6 +945,27 @@ func CastUnsafePtr(castType, target ast.Expr) *ast.CallExpr {
 			X: castType,
 		},
 		Args: []ast.Expr{target},
+	}
+}
+
+func CastUnsafePtrOfTypeUuid(castType, target ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun: &ast.ParenExpr{
+			X: castType,
+		},
+		Args: []ast.Expr{
+			&ast.CallExpr{
+				Fun: NewIdent(GET_REF_FUNC_NAME),
+				Args: []ast.Expr{
+					&ast.CallExpr{
+						Fun: NewIdent(GET_UUID_FROM_PTR_NAME),
+						Args: []ast.Expr{
+							target,
+						},
+					},
+				},
+			},
+		},
 	}
 }
 
@@ -1131,16 +1090,7 @@ func FuncAst(f *Func) *ast.FuncDecl {
 		resultExprs := make([]ast.Expr, sig.Results().Len())
 		for i := 0; i < sig.Results().Len(); i++ {
 			result := sig.Results().At(i)
-			switch result.Type().(type) {
-			case *types.Basic:
-				resultExprs[i] = resultNames[i]
-			case *types.Pointer:
-				// already have a pointer, so just count the reference
-				resultExprs[i] = UuidToCBytes(IncrementRefCall(resultNames[i]).X)
-			case *types.Named:
-				// grab a reference to the named type
-				resultExprs[i] = UuidToCBytes(IncrementRefCall(Ref(resultNames[i])).X)
-			}
+			resultExprs[i] = CastOut(result.Type(), resultNames[i])
 		}
 
 		funcDecl.Body.List = append(funcDecl.Body.List, Return(resultExprs...))
@@ -1165,6 +1115,25 @@ func FuncAst(f *Func) *ast.FuncDecl {
 type result struct {
 	Name *ast.Ident
 	Stmt ast.Stmt
+}
+
+func CastOut(t types.Type, name ast.Expr) ast.Expr {
+	switch typ := t.(type) {
+	case *types.Basic:
+		if typ.Kind() == types.String {
+			return ToCString(name)
+		} else {
+			return name
+		}
+	case *types.Pointer:
+		// already have a pointer, so just count the reference
+		return UuidToCBytes(IncrementRefCall(name))
+	case *types.Named:
+		// grab a reference to the named type
+		return UuidToCBytes(IncrementRefCall(Ref(name)))
+	default:
+		return name
+	}
 }
 
 // ParamIdents transforms parameter tuples into a slice of AST expressions
@@ -1208,6 +1177,12 @@ func CastExpr(t types.Type, ident ast.Expr) ast.Expr {
 		return castExpr
 	case *types.Slice:
 		return DeRef(CastUnsafePtr(DeRef(NewIdent("[]"+t.Elem().String())), UintptrToUnsafePointer(ident)))
+	case *types.Basic:
+		if t.Kind() == types.String {
+			return ToGoString(ident)
+		} else {
+			return ident
+		}
 	default:
 		return ident
 	}
@@ -1256,6 +1231,34 @@ func UnsafePtrOrBasic(p *types.Var, t types.Type) *ast.Field {
 	}
 }
 
+// VarToField transforms a Var into an AST field
+func VarToField(p *types.Var, t types.Type) *ast.Field {
+	name := p.Name()
+	typeName := p.Type().String()
+	defaultAction := func() *ast.Field {
+		return &ast.Field{
+			Type:  NewIdent(typeName),
+			Names: []*ast.Ident{NewIdent(name)},
+		}
+	}
+
+	switch typ := t.(type) {
+	case *types.Named:
+		return NamedToField(p, typ)
+	case *types.Basic:
+		if typ.Kind() == types.String {
+			return &ast.Field{
+				Type:  charStarType,
+				Names: []*ast.Ident{NewIdent(name)},
+			}
+		} else {
+			return defaultAction()
+		}
+	default:
+		return defaultAction()
+	}
+}
+
 type hasMethods interface {
 	NumMethods() int
 	Method(int) *types.Func
@@ -1299,22 +1302,6 @@ func ImplementsError(t types.Type) bool {
 	}
 
 	return false
-}
-
-// VarToField transforms a Var into an AST field
-func VarToField(p *types.Var, t types.Type) *ast.Field {
-	switch typ := t.(type) {
-	case *types.Named:
-		return NamedToField(p, typ)
-	default:
-		name := p.Name()
-		typeName := p.Type().String()
-		return &ast.Field{
-			Type:  NewIdent(typeName),
-			Names: []*ast.Ident{NewIdent(name)},
-		}
-
-	}
 }
 
 // NameToField transforms a Var that's a Named type into an AST Field

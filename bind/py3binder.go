@@ -70,9 +70,7 @@ class VeilObject(object):
         self.uuid_ptr = uuid_ptr
 
     def __del__(self):
-        print("deleting obj")
         _CffiHelper.cgo_decref(self.uuid_ptr)
-        print("deleted obj")
 
 
 class VeilError(Exception):

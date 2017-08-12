@@ -54,7 +54,7 @@ func CGoType(n *types.Named) ast.Expr {
 
 // ToAst returns the go/ast representation of the CGo wrapper of the Array type
 func (s Struct) ToAst() []ast.Decl {
-	decls := []ast.Decl{s.NewAst(), s.StringAst(), s.DestroyAst()}
+	decls := []ast.Decl{s.NewAst(), s.StringAst()}
 	decls = append(decls, s.FieldAccessorsAst()...)
 	return decls
 }
@@ -69,11 +69,6 @@ func (s Struct) NewAst() ast.Decl {
 func (s Struct) StringAst() ast.Decl {
 	functionName := s.CGoName() + "_str"
 	return StringAst(functionName, s.CGoType())
-}
-
-// DestroyAst produces the []ast.Decl to destruct a slice type and decrement it's reference count
-func (s Struct) DestroyAst() ast.Decl {
-	return DestroyAst(s.CGoName() + "_destroy")
 }
 
 func (s Struct) FieldAccessorsAst() []ast.Decl {

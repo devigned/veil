@@ -36,7 +36,6 @@ func (s Slice) ToAst() []ast.Decl {
 		s.ItemAst(),
 		s.ItemSetAst(),
 		s.ItemAppendAst(),
-		s.DestroyAst(),
 	}
 }
 
@@ -64,21 +63,16 @@ func (s Slice) StringAst() ast.Decl {
 	return StringAst(functionName, goTypeIdent)
 }
 
-// DestroyAst produces the []ast.Decl to destruct a slice type and decrement it's reference count
-func (s Slice) DestroyAst() ast.Decl {
-	return DestroyAst(s.CGoName() + "_destroy")
-}
-
 func (s Slice) ItemAst() ast.Decl {
 	functionName := s.CGoName() + "_item"
 	selfIdent := NewIdent("self")
 	indexIdent := NewIdent("i")
 	indexTypeIdent := NewIdent("int")
 	goTypeIdent := NewIdent(s.GoName())
-	elementTypeIdent := NewIdent(s.elem.String())
 	itemsIdent := NewIdent("items")
 
-	castExpression := CastUnsafePtr(DeRef(goTypeIdent), selfIdent)
+	castExpression := CastUnsafePtrOfTypeUuid(DeRef(goTypeIdent), selfIdent)
+	itemField := VarToField(types.NewVar(0, nil, "", s.elem), s.elem)
 
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
@@ -95,7 +89,7 @@ func (s Slice) ItemAst() ast.Decl {
 				}...),
 			Results: &ast.FieldList{
 				List: []*ast.Field{
-					{Type: elementTypeIdent},
+					itemField,
 				},
 			},
 		},
@@ -110,14 +104,14 @@ func (s Slice) ItemAst() ast.Decl {
 					},
 					Tok: token.DEFINE,
 				},
-				Return(&ast.IndexExpr{
+				Return(CastOut(s.elem, &ast.IndexExpr{
 					X: &ast.ParenExpr{
 						X: &ast.StarExpr{
 							X: itemsIdent,
 						},
 					},
 					Index: indexIdent,
-				}),
+				})),
 			},
 		},
 	}
@@ -131,11 +125,11 @@ func (s Slice) ItemSetAst() ast.Decl {
 	indexIdent := NewIdent("i")
 	indexTypeIdent := NewIdent("int")
 	goTypeIdent := NewIdent(s.GoName())
-	elementTypeIdent := NewIdent(s.elem.String())
 	itemsIdent := NewIdent("items")
 	itemIdent := NewIdent("item")
 
-	castExpression := CastUnsafePtr(DeRef(goTypeIdent), selfIdent)
+	castExpression := CastUnsafePtrOfTypeUuid(DeRef(goTypeIdent), selfIdent)
+	itemField := VarToField(types.NewVar(0, nil, itemIdent.Name, s.elem), s.elem)
 
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
@@ -149,10 +143,7 @@ func (s Slice) ItemSetAst() ast.Decl {
 						Names: []*ast.Ident{indexIdent},
 						Type:  indexTypeIdent,
 					},
-					{
-						Names: []*ast.Ident{itemIdent},
-						Type:  elementTypeIdent,
-					},
+					itemField,
 				}...),
 		},
 		Body: &ast.BlockStmt{
@@ -178,7 +169,7 @@ func (s Slice) ItemSetAst() ast.Decl {
 						},
 					},
 					Rhs: []ast.Expr{
-						itemIdent,
+						CastExpr(s.elem, itemIdent),
 					},
 					Tok: token.ASSIGN,
 				},
@@ -194,11 +185,11 @@ func (s Slice) ItemAppendAst() ast.Decl {
 	functionName := s.CGoName() + "_item_append"
 	selfIdent := NewIdent("self")
 	goTypeIdent := NewIdent(s.GoName())
-	elementTypeIdent := NewIdent(s.elem.String())
 	itemsIdent := NewIdent("items")
 	itemIdent := NewIdent("item")
 
-	castExpression := CastUnsafePtr(DeRef(goTypeIdent), selfIdent)
+	castExpression := CastUnsafePtrOfTypeUuid(DeRef(goTypeIdent), selfIdent)
+	field := VarToField(types.NewVar(0, nil, itemIdent.Name, s.elem), s.elem)
 
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
@@ -206,13 +197,7 @@ func (s Slice) ItemAppendAst() ast.Decl {
 		},
 		Name: NewIdent(functionName),
 		Type: &ast.FuncType{
-			Params: InstanceMethodParams(
-				[]*ast.Field{
-					{
-						Names: []*ast.Ident{itemIdent},
-						Type:  elementTypeIdent,
-					},
-				}...),
+			Params: InstanceMethodParams(field),
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
@@ -234,7 +219,7 @@ func (s Slice) ItemAppendAst() ast.Decl {
 							Fun: NewIdent("append"),
 							Args: []ast.Expr{
 								DeRef(itemsIdent),
-								itemIdent,
+								CastExpr(s.elem, itemIdent),
 							},
 						},
 					},
