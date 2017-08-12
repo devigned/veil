@@ -86,11 +86,11 @@ func (p Package) Funcs() []Func {
 	return output
 }
 
-func (p Package) Structs() []Struct {
+func (p Package) Structs() []*Struct {
 	values := p.namedStructs.Values()
-	output := make([]Struct, len(values))
+	output := make([]*Struct, len(values))
 	for i, item := range values {
-		output[i] = item.(Struct)
+		output[i] = item.(*Struct)
 	}
 	return output
 }

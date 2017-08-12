@@ -101,6 +101,20 @@ def {{$func.Name}}({{$func.PrintArgs}}):
 
 {{end}}
 
+{{range $_, $class := .Classes}}
+class {{$class.Name}}(VeilObject):
+		{{ range $_, $field := $class.Fields -}}
+		@property
+		def {{$field.Name}}(self):
+			pass
+
+		@{{$field.Name}}.setter
+		def {{$field.Name}}(self, value):
+			pass
+    {{ end -}}
+
+{{end}}
+
 `
 	STRING_INPUT_TRANSFORM = "%s = ffi.new(\"char[]\", %s.encode(\"utf-8\"))"
 
@@ -143,21 +157,37 @@ type Py3Binder struct {
 type PyTemplateData struct {
 	CDef           string
 	Funcs          []*PyFunc
+	Classes        []*PyClass
 	CffiHelperName string
 	ReturnVarName  string
 }
 
 type PyParam struct {
-	underlying     *types.Var
-	InputTransform string
+	underlying *types.Var
+}
+
+type PyClass struct {
+	*cgo.Struct
+	Fields []*PyParam
+}
+
+func NewPyClass(s *cgo.Struct) *PyClass {
+	fields := make([]*PyParam, s.Struct().NumFields())
+	for i := 0; i < s.Struct().NumFields(); i++ {
+		fields[i] = NewPyParam(s.Struct().Field(i))
+	}
+	return &PyClass{
+		Struct: s,
+		Fields: fields,
+	}
+}
+
+func (c PyClass) Name() string {
+	return c.Struct.Named.Obj().Name()
 }
 
 func NewPyParam(v *types.Var) *PyParam {
 	return &PyParam{underlying: v}
-}
-
-func (p PyParam) HasInputTransform() bool {
-	return p.InputTransform != ""
 }
 
 func (p PyParam) Name() string {
@@ -247,6 +277,7 @@ func (p Py3Binder) Bind(outDir string) error {
 	data := PyTemplateData{
 		CDef:           strings.Join(cdefText, "\n"),
 		Funcs:          p.Funcs(),
+		Classes:        p.Classes(),
 		CffiHelperName: CFFI_HELPER_NAME,
 		ReturnVarName:  RETURN_VAR_NAME,
 	}
@@ -265,6 +296,14 @@ func (p Py3Binder) Bind(outDir string) error {
 	PyFormat(pythonFilePath)
 
 	return nil
+}
+
+func (p Py3Binder) Classes() []*PyClass {
+	classes := make([]*PyClass, len(p.pkg.Structs()))
+	for idx, s := range p.pkg.Structs() {
+		classes[idx] = NewPyClass(s)
+	}
+	return classes
 }
 
 func (p Py3Binder) Funcs() []*PyFunc {
