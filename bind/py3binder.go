@@ -102,6 +102,9 @@ def {{$func.Name}}({{$func.PrintArgs}}):
 {{end}}
 
 `
+	STRING_INPUT_TRANSFORM = "%s = ffi.new(\"char[]\", %s.encode(\"utf-8\"))"
+
+	STRING_OUTPUT_TRANSFORM = "_CffiHelper.c2py_string(%s)"
 )
 
 var (
@@ -165,6 +168,16 @@ func (p PyParam) IsError() bool {
 	return cgo.ImplementsError(p.underlying.Type())
 }
 
+func (p PyParam) ReturnFormat(varName string) string {
+	switch t := p.underlying.Type().(type) {
+	case *types.Basic:
+		if t.Kind() == types.String {
+			return fmt.Sprintf(STRING_OUTPUT_TRANSFORM, varName)
+		}
+	}
+	return varName
+}
+
 type PyFunc struct {
 	fun     cgo.Func
 	Name    string
@@ -173,8 +186,18 @@ type PyFunc struct {
 }
 
 func (f PyFunc) InputTransforms() []string {
-	// TODO: add input transformations
-	return []string{}
+	inputTranforms := []string{}
+	for _, param := range f.Params {
+		switch t := param.underlying.Type().(type) {
+		case *types.Basic:
+			if t.Kind() == types.String {
+				varName := param.Name()
+				inputTranforms = append(inputTranforms,
+					fmt.Sprintf(STRING_INPUT_TRANSFORM, varName, varName))
+			}
+		}
+	}
+	return inputTranforms
 }
 
 func (f PyFunc) Call() string {
@@ -193,13 +216,16 @@ func (f PyFunc) PrintReturns() string {
 	if len(f.Results) > 1 {
 		names := []string{}
 		for i := 0; i < len(f.Results); i++ {
-			if !cgo.ImplementsError(f.Results[i].underlying.Type()) {
-				names = append(names, fmt.Sprintf(RETURN_VAR_NAME+".r%d", i))
+			result := f.Results[i]
+			if !cgo.ImplementsError(result.underlying.Type()) {
+				names = append(names,
+					result.ReturnFormat(fmt.Sprintf(RETURN_VAR_NAME+".r%d", i)))
 			}
 		}
 		return strings.Join(names, ", ")
 	} else {
-		return RETURN_VAR_NAME
+		result := f.Results[0]
+		return result.ReturnFormat(RETURN_VAR_NAME)
 	}
 }
 
