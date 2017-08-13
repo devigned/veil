@@ -1128,11 +1128,8 @@ func CastOut(t types.Type, name ast.Expr) ast.Expr {
 	case *types.Pointer:
 		// already have a pointer, so just count the reference
 		return UuidToCBytes(IncrementRefCall(name))
-	case *types.Named:
-		// grab a reference to the named type
-		return UuidToCBytes(IncrementRefCall(Ref(name)))
 	default:
-		return name
+		return UuidToCBytes(IncrementRefCall(Ref(name)))
 	}
 }
 

@@ -107,13 +107,23 @@ class {{$class.Name}}(VeilObject):
 		def __init__(self, uuid_ptr=None):
 			if uuid_ptr is None:
 				uuid_ptr = _CffiHelper.lib.{{$class.NewMethodName}}()
-			super(Hello, self).__init__(uuid_ptr)
+			super({{$class.Name}}, self).__init__(uuid_ptr)
 
 		def __go_str__(self):
 			cret = _CffiHelper.lib.{{$class.ToStringMethodName}}(self._uuid_ptr)
 			return _CffiHelper.c2py_string(cret)
 
+		{{if $class.Constructors}}# Constructors{{end}}
 
+		{{range $_, $func := $class.Constructors }}
+		@staticmethod
+		def {{$func.Name}}({{$func.PrintArgs}}):
+			# TODO: Add constructor logic
+			pass
+
+		{{end}}
+
+		# Properties
 
 		{{ range $_, $field := $class.Fields -}}
 		@property
@@ -170,6 +180,7 @@ type Py3Binder struct {
 type PyTemplateData struct {
 	CDef           string
 	Funcs          []*PyFunc
+	Constructors   map[string]*PyFunc
 	Classes        []*PyClass
 	CffiHelperName string
 	ReturnVarName  string
@@ -181,17 +192,27 @@ type PyParam struct {
 
 type PyClass struct {
 	*cgo.Struct
-	Fields []*PyParam
+	Fields       []*PyParam
+	Constructors []*PyFunc
 }
 
-func NewPyClass(s *cgo.Struct) *PyClass {
+func (p Py3Binder) NewPyClass(s *cgo.Struct) *PyClass {
 	fields := make([]*PyParam, s.Struct().NumFields())
 	for i := 0; i < s.Struct().NumFields(); i++ {
 		fields[i] = NewPyParam(s.Struct().Field(i))
 	}
+
+	constructors := []*PyFunc{}
+	for _, f := range p.pkg.Funcs() {
+		if s.IsConstructor(f) {
+			constructors = append(constructors, ToPyFunc(f))
+		}
+	}
+
 	return &PyClass{
-		Struct: s,
-		Fields: fields,
+		Struct:       s,
+		Fields:       fields,
+		Constructors: constructors,
 	}
 }
 
@@ -310,9 +331,12 @@ func (p Py3Binder) Bind(outDir string) error {
 	}
 
 	w := bufio.NewWriter(f)
-	pythonTemplate.Execute(w, data)
+	err = pythonTemplate.Execute(w, data)
 	w.Flush()
 	f.Close()
+	if err != nil {
+		panic(err)
+	}
 
 	PyFormat(pythonFilePath)
 
@@ -322,36 +346,41 @@ func (p Py3Binder) Bind(outDir string) error {
 func (p Py3Binder) Classes() []*PyClass {
 	classes := make([]*PyClass, len(p.pkg.Structs()))
 	for idx, s := range p.pkg.Structs() {
-		classes[idx] = NewPyClass(s)
+		classes[idx] = p.NewPyClass(s)
 	}
 	return classes
 }
 
 func (p Py3Binder) Funcs() []*PyFunc {
-	funcs := make([]*PyFunc, len(p.pkg.Funcs()))
-
-	for idx, f := range p.pkg.Funcs() {
-
-		pyParams := make([]*PyParam, f.Signature().Params().Len())
-		for i := 0; i < f.Signature().Params().Len(); i++ {
-			param := f.Signature().Params().At(i)
-			pyParams[i] = NewPyParam(param)
+	funcs := []*PyFunc{}
+	for _, f := range p.pkg.Funcs() {
+		if p.pkg.IsConstructor(f) {
+			continue
 		}
-
-		pyResults := make([]*PyParam, f.Signature().Results().Len())
-		for i := 0; i < f.Signature().Results().Len(); i++ {
-			param := f.Signature().Results().At(i)
-			pyResults[i] = NewPyParam(param)
-		}
-
-		funcs[idx] = &PyFunc{
-			fun:     f,
-			Name:    ToSnake(f.Name()),
-			Params:  pyParams,
-			Results: pyResults,
-		}
+		funcs = append(funcs, ToPyFunc(f))
 	}
 	return funcs
+}
+
+func ToPyFunc(f cgo.Func) *PyFunc {
+	pyParams := make([]*PyParam, f.Signature().Params().Len())
+	for i := 0; i < f.Signature().Params().Len(); i++ {
+		param := f.Signature().Params().At(i)
+		pyParams[i] = NewPyParam(param)
+	}
+
+	pyResults := make([]*PyParam, f.Signature().Results().Len())
+	for i := 0; i < f.Signature().Results().Len(); i++ {
+		param := f.Signature().Results().At(i)
+		pyResults[i] = NewPyParam(param)
+	}
+
+	return &PyFunc{
+		fun:     f,
+		Name:    ToSnake(f.Name()),
+		Params:  pyParams,
+		Results: pyResults,
+	}
 }
 
 func (p Py3Binder) cDefText(headerPath string) ([]string, error) {

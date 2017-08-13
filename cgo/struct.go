@@ -4,6 +4,12 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"regexp"
+	"strings"
+)
+
+var (
+	constructorName = regexp.MustCompile(`^New([A-Z]\w+)`)
 )
 
 // Struct is a helpful facade over types.Named which is intended to only contain a struct
@@ -98,7 +104,7 @@ func (s Struct) Getter(field *types.Var) ast.Decl {
 	localVarIdent := NewIdent("value")
 	fieldIdent := NewIdent(field.Name())
 
-	castExpression := CastUnsafePtr(DeRef(s.CGoType()), selfIdent)
+	castExpression := CastUnsafePtrOfTypeUuid(DeRef(s.CGoType()), selfIdent)
 
 	results := &ast.FieldList{}
 	body := &ast.BlockStmt{}
@@ -119,7 +125,7 @@ func (s Struct) Getter(field *types.Var) ast.Decl {
 		}
 
 	} else {
-		results.List = []*ast.Field{{Type: uintptr}}
+		results.List = []*ast.Field{{Type: unsafePointer}}
 		body.List = []ast.Stmt{
 			&ast.AssignStmt{
 				Lhs: []ast.Expr{localVarIdent},
@@ -131,7 +137,7 @@ func (s Struct) Getter(field *types.Var) ast.Decl {
 					},
 				},
 			},
-			Return(UintPtr(ToUnsafePointer(Ref(localVarIdent)))),
+			Return(CastOut(field.Type(), localVarIdent)),
 		}
 	}
 
@@ -156,7 +162,7 @@ func (s Struct) Setter(field *types.Var) ast.Decl {
 	localVarIdent := NewIdent("value")
 	fieldIdent := NewIdent(field.Name())
 
-	castExpression := CastUnsafePtr(DeRef(s.CGoType()), selfIdent)
+	castExpression := CastUnsafePtrOfTypeUuid(DeRef(s.CGoType()), selfIdent)
 
 	var params *ast.FieldList
 	body := &ast.BlockStmt{}
@@ -209,4 +215,12 @@ func (s Struct) Setter(field *types.Var) ast.Decl {
 
 func (s Struct) CGoFieldName(field *types.Var) string {
 	return s.CGoName() + "_" + field.Name()
+}
+
+func (s Struct) IsConstructor(f Func) bool {
+	matches := constructorName.FindStringSubmatch(f.Name())
+	if len(matches) > 1 && strings.HasPrefix(matches[1], s.Named.Obj().Name()) {
+		return true
+	}
+	return false
 }

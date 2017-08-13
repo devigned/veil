@@ -184,6 +184,15 @@ func (p Package) ToAst() []ast.Decl {
 	return decls
 }
 
+func (p Package) IsConstructor(f Func) bool {
+	for _, s := range p.Structs() {
+		if s.IsConstructor(f) {
+			return true
+		}
+	}
+	return false
+}
+
 func funcExportedTypes(fun *types.Func) []AstTransformer {
 	typs := []AstTransformer{}
 	sig := fun.Type().(*types.Signature)
