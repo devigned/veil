@@ -52,6 +52,14 @@ func CGoType(n *types.Named) ast.Expr {
 	}
 }
 
+func (s Struct) NewMethodName() string {
+	return s.CGoName() + "_new"
+}
+
+func (s Struct) ToStringMethodName() string {
+	return s.CGoName() + "_str"
+}
+
 // ToAst returns the go/ast representation of the CGo wrapper of the Array type
 func (s Struct) ToAst() []ast.Decl {
 	decls := []ast.Decl{s.NewAst(), s.StringAst()}
@@ -61,13 +69,13 @@ func (s Struct) ToAst() []ast.Decl {
 
 // NewAst produces the []ast.Decl to construct a slice type and increment it's reference count
 func (s Struct) NewAst() ast.Decl {
-	functionName := s.CGoName() + "_new"
+	functionName := s.NewMethodName()
 	return NewAst(functionName, s.CGoType())
 }
 
 // StringAst produces the []ast.Decl to provide a string representation of the slice
 func (s Struct) StringAst() ast.Decl {
-	functionName := s.CGoName() + "_str"
+	functionName := s.ToStringMethodName()
 	return StringAst(functionName, s.CGoType())
 }
 

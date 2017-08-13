@@ -67,10 +67,10 @@ class _CffiHelper(object):
 
 class VeilObject(object):
     def __init__(self, uuid_ptr):
-        self.uuid_ptr = uuid_ptr
+        self._uuid_ptr = uuid_ptr
 
     def __del__(self):
-        _CffiHelper.cgo_decref(self.uuid_ptr)
+        _CffiHelper.cgo_decref(self._uuid_ptr)
 
 
 class VeilError(Exception):
@@ -103,14 +103,27 @@ def {{$func.Name}}({{$func.PrintArgs}}):
 
 {{range $_, $class := .Classes}}
 class {{$class.Name}}(VeilObject):
+
+		def __init__(self, uuid_ptr=None):
+			if uuid_ptr is None:
+				uuid_ptr = _CffiHelper.lib.{{$class.NewMethodName}}()
+			super(Hello, self).__init__(uuid_ptr)
+
+		def __go_str__(self):
+			cret = _CffiHelper.lib.{{$class.ToStringMethodName}}(self._uuid_ptr)
+			return _CffiHelper.c2py_string(cret)
+
+
+
 		{{ range $_, $field := $class.Fields -}}
 		@property
 		def {{$field.Name}}(self):
-			pass
+			cret = _CffiHelper.lib.{{$class.MethodName $field}}_get(self._uuid_ptr)
+			return cret
 
 		@{{$field.Name}}.setter
 		def {{$field.Name}}(self, value):
-			pass
+			_CffiHelper.lib.{{$class.MethodName $field}}_set(self._uuid_ptr, value)
     {{ end -}}
 
 {{end}}
@@ -184,6 +197,14 @@ func NewPyClass(s *cgo.Struct) *PyClass {
 
 func (c PyClass) Name() string {
 	return c.Struct.Named.Obj().Name()
+}
+
+func (c PyClass) MethodName(p *PyParam) string {
+	return c.CGoFieldName(p.underlying)
+}
+
+func (c PyClass) NewMethodName() string {
+	return c.Struct.NewMethodName()
 }
 
 func NewPyParam(v *types.Var) *PyParam {
