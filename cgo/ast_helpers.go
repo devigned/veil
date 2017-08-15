@@ -605,6 +605,19 @@ func IncrementRef() ast.Decl {
 			// } else {
 			Else: &ast.BlockStmt{
 				List: []ast.Stmt{
+					// uid = uuid.NewV4()
+					&ast.AssignStmt{
+						Lhs: []ast.Expr{uid},
+						Tok: token.ASSIGN,
+						Rhs: []ast.Expr{
+							&ast.CallExpr{
+								Fun: &ast.SelectorExpr{
+									X:   NewIdent("uuid"),
+									Sel: NewIdent("NewV4"),
+								},
+							},
+						},
+					},
 					// refs.refs[ptr] = uid
 					&ast.AssignStmt{
 						Lhs: []ast.Expr{

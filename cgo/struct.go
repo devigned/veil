@@ -105,40 +105,32 @@ func (s Struct) Getter(field *types.Var) ast.Decl {
 	fieldIdent := NewIdent(field.Name())
 
 	castExpression := CastUnsafePtrOfTypeUuid(DeRef(s.CGoType()), selfIdent)
+	assignment := &ast.AssignStmt{
+		Lhs: []ast.Expr{localVarIdent},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{
+			&ast.SelectorExpr{
+				X:   castExpression,
+				Sel: fieldIdent,
+			},
+		},
+	}
 
 	results := &ast.FieldList{}
 	body := &ast.BlockStmt{}
-	if basic, ok := field.Type().(*types.Basic); ok {
-		results.List = []*ast.Field{{Type: NewIdent(basic.Name())}}
-		body.List = []ast.Stmt{
-			&ast.AssignStmt{
-				Lhs: []ast.Expr{localVarIdent},
-				Tok: token.DEFINE,
-				Rhs: []ast.Expr{
-					&ast.SelectorExpr{
-						X:   castExpression,
-						Sel: fieldIdent,
-					},
-				},
-			},
-			Return(localVarIdent),
-		}
+	body.List = []ast.Stmt{
+		assignment,
+		Return(CastOut(field.Type(), localVarIdent)),
+	}
 
+	if basic, ok := field.Type().(*types.Basic); ok {
+		if basic.Kind() == types.String {
+			results.List = []*ast.Field{{Type: charStarType}}
+		} else {
+			results.List = []*ast.Field{{Type: NewIdent(basic.Name())}}
+		}
 	} else {
 		results.List = []*ast.Field{{Type: unsafePointer}}
-		body.List = []ast.Stmt{
-			&ast.AssignStmt{
-				Lhs: []ast.Expr{localVarIdent},
-				Tok: token.DEFINE,
-				Rhs: []ast.Expr{
-					&ast.SelectorExpr{
-						X:   castExpression,
-						Sel: fieldIdent,
-					},
-				},
-			},
-			Return(CastOut(field.Type(), localVarIdent)),
-		}
 	}
 
 	funcDecl := &ast.FuncDecl{
@@ -165,38 +157,22 @@ func (s Struct) Setter(field *types.Var) ast.Decl {
 	castExpression := CastUnsafePtrOfTypeUuid(DeRef(s.CGoType()), selfIdent)
 
 	var params *ast.FieldList
+	typedField := UnsafePtrOrBasic(field, field.Type())
+	typedField.Names = []*ast.Ident{localVarIdent}
 	body := &ast.BlockStmt{}
-	if basic, ok := field.Type().(*types.Basic); ok {
-		basicTypeIdent := NewIdent(basic.Name())
-		params = InstanceMethodParams(&ast.Field{Type: basicTypeIdent, Names: []*ast.Ident{localVarIdent}})
-		body.List = []ast.Stmt{
-			&ast.AssignStmt{
-				Lhs: []ast.Expr{
-					&ast.SelectorExpr{
-						X:   castExpression,
-						Sel: fieldIdent,
-					},
+	params = InstanceMethodParams(typedField)
+	rhs := CastExpr(field.Type(), localVarIdent)
+	body.List = []ast.Stmt{
+		&ast.AssignStmt{
+			Lhs: []ast.Expr{
+				&ast.SelectorExpr{
+					X:   castExpression,
+					Sel: fieldIdent,
 				},
-				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{localVarIdent},
 			},
-		}
-
-	} else {
-		params = InstanceMethodParams(&ast.Field{Type: unsafePointer, Names: []*ast.Ident{localVarIdent}})
-		rhs := CastExpr(field.Type(), localVarIdent)
-		body.List = []ast.Stmt{
-			&ast.AssignStmt{
-				Lhs: []ast.Expr{
-					&ast.SelectorExpr{
-						X:   castExpression,
-						Sel: fieldIdent,
-					},
-				},
-				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{rhs},
-			},
-		}
+			Tok: token.ASSIGN,
+			Rhs: []ast.Expr{rhs},
+		},
 	}
 
 	funcDecl := &ast.FuncDecl{
@@ -223,4 +199,8 @@ func (s Struct) IsConstructor(f Func) bool {
 		return true
 	}
 	return false
+}
+
+func (s Struct) ConstructorName(f Func) string {
+	return strings.Replace(f.Name(), s.Named.Obj().Name(), "", 1)
 }

@@ -23,6 +23,7 @@ const (
 	PYTHON_FILE_NAME = "generated.py"
 	PYTHON_TEMPLATE  = `import os
 import sys
+import uuid
 import cffi as _cffi_backend
 
 _PY3 = sys.version_info[0] == 3
@@ -72,6 +73,11 @@ class VeilObject(object):
     def __del__(self):
         _CffiHelper.cgo_decref(self._uuid_ptr)
 
+    def go_uuid(self):
+    	ba = bytearray(16)
+    	ffi.memmove(ba, self._uuid_ptr, 16)
+    	return uuid.UUID(bytes=ba)
+
 
 class VeilError(Exception):
     def __init__(self, uuid_ptr):
@@ -118,8 +124,17 @@ class {{$class.Name}}(VeilObject):
 		{{range $_, $func := $class.Constructors }}
 		@staticmethod
 		def {{$func.Name}}({{$func.PrintArgs}}):
-			# TODO: Add constructor logic
-			pass
+			{{ range $_, $inTrx := $func.InputTransforms -}}
+			  {{ $inTrx }}
+			{{ end -}}
+			{{$cret}} = _CffiHelper.lib.{{$func.Call -}}
+			{{ range $idx, $result := $func.Results -}}
+				{{if $result.IsError -}}
+					if not VeilError.is_nil(cret.r1):
+						{{ printf "raise VeilError(%s.r%d)" $cret $idx -}}
+				{{end}}
+			{{ end -}}
+			return {{$func.PrintReturns}}
 
 		{{end}}
 
@@ -129,10 +144,11 @@ class {{$class.Name}}(VeilObject):
 		@property
 		def {{$field.Name}}(self):
 			cret = _CffiHelper.lib.{{$class.MethodName $field}}_get(self._uuid_ptr)
-			return cret
+			return {{$field.ReturnFormat "cret"}}
 
 		@{{$field.Name}}.setter
 		def {{$field.Name}}(self, value):
+			{{with $format := $field.InputFormat "value"}}{{if $format}}{{$format}}{{end}}{{end}}
 			_CffiHelper.lib.{{$class.MethodName $field}}_set(self._uuid_ptr, value)
     {{ end -}}
 
@@ -140,8 +156,10 @@ class {{$class.Name}}(VeilObject):
 
 `
 	STRING_INPUT_TRANSFORM = "%s = ffi.new(\"char[]\", %s.encode(\"utf-8\"))"
+	STRUCT_INPUT_TRANSFORM = "%s = %s.uuid_ptr()"
 
 	STRING_OUTPUT_TRANSFORM = "_CffiHelper.c2py_string(%s)"
+	STRUCT_OUTPUT_TRANSFORM = "%s(%s)"
 )
 
 var (
@@ -188,28 +206,34 @@ type PyTemplateData struct {
 
 type PyParam struct {
 	underlying *types.Var
+	binder     *Py3Binder
 }
 
 type PyClass struct {
 	*cgo.Struct
+	binder       *Py3Binder
 	Fields       []*PyParam
 	Constructors []*PyFunc
 }
 
 func (p Py3Binder) NewPyClass(s *cgo.Struct) *PyClass {
-	fields := make([]*PyParam, s.Struct().NumFields())
+	fields := []*PyParam{}
 	for i := 0; i < s.Struct().NumFields(); i++ {
-		fields[i] = NewPyParam(s.Struct().Field(i))
+		field := s.Struct().Field(i)
+		if field.Exported() {
+			fields = append(fields, p.NewPyParam(s.Struct().Field(i)))
+		}
 	}
 
 	constructors := []*PyFunc{}
 	for _, f := range p.pkg.Funcs() {
 		if s.IsConstructor(f) {
-			constructors = append(constructors, ToPyFunc(f))
+			constructors = append(constructors, p.ToPyConstructor(s, f))
 		}
 	}
 
 	return &PyClass{
+		binder:       &p,
 		Struct:       s,
 		Fields:       fields,
 		Constructors: constructors,
@@ -228,8 +252,11 @@ func (c PyClass) NewMethodName() string {
 	return c.Struct.NewMethodName()
 }
 
-func NewPyParam(v *types.Var) *PyParam {
-	return &PyParam{underlying: v}
+func (p *Py3Binder) NewPyParam(v *types.Var) *PyParam {
+	return &PyParam{
+		underlying: v,
+		binder:     p,
+	}
 }
 
 func (p PyParam) Name() string {
@@ -246,8 +273,35 @@ func (p PyParam) ReturnFormat(varName string) string {
 		if t.Kind() == types.String {
 			return fmt.Sprintf(STRING_OUTPUT_TRANSFORM, varName)
 		}
+		return varName
+	case *types.Named:
+		class := p.binder.NewPyClass(&cgo.Struct{Named: t})
+		return fmt.Sprintf(STRUCT_OUTPUT_TRANSFORM, class.Name(), varName)
+	case *types.Pointer:
+		if named, ok := t.Elem().(*types.Named); ok {
+			class := p.binder.NewPyClass(&cgo.Struct{Named: named})
+			return fmt.Sprintf(STRUCT_OUTPUT_TRANSFORM, class.Name(), varName)
+		}
+		return varName
+	default:
+		return varName
 	}
-	return varName
+}
+
+func (p PyParam) InputFormat(varName string) string {
+	switch t := p.underlying.Type().(type) {
+	case *types.Basic:
+		if t.Kind() == types.String {
+			return fmt.Sprintf(STRING_INPUT_TRANSFORM, varName, varName)
+		}
+	case *types.Named:
+		return fmt.Sprintf(STRUCT_INPUT_TRANSFORM, varName, varName)
+	case *types.Pointer:
+		if _, ok := t.Elem().(*types.Named); ok {
+			return fmt.Sprintf(STRUCT_INPUT_TRANSFORM, varName, varName)
+		}
+	}
+	return ""
 }
 
 type PyFunc struct {
@@ -260,13 +314,9 @@ type PyFunc struct {
 func (f PyFunc) InputTransforms() []string {
 	inputTranforms := []string{}
 	for _, param := range f.Params {
-		switch t := param.underlying.Type().(type) {
-		case *types.Basic:
-			if t.Kind() == types.String {
-				varName := param.Name()
-				inputTranforms = append(inputTranforms,
-					fmt.Sprintf(STRING_INPUT_TRANSFORM, varName, varName))
-			}
+		varName := param.Name()
+		if format := param.InputFormat(varName); format != "" {
+			inputTranforms = append(inputTranforms, format)
 		}
 	}
 	return inputTranforms
@@ -357,24 +407,35 @@ func (p Py3Binder) Funcs() []*PyFunc {
 		if p.pkg.IsConstructor(f) {
 			continue
 		}
-		funcs = append(funcs, ToPyFunc(f))
+		funcs = append(funcs, p.ToPyFunc(f))
 	}
 	return funcs
 }
 
-func ToPyFunc(f cgo.Func) *PyFunc {
+func (p Py3Binder) ToPyConstructor(class *cgo.Struct, f cgo.Func) *PyFunc {
+	fun := p.ToGenericFunc(f)
+	fun.Name = ToSnake(class.ConstructorName(f))
+	return fun
+}
+
+func (p Py3Binder) ToPyFunc(f cgo.Func) *PyFunc {
+	fun := p.ToGenericFunc(f)
+	fun.Name = ToSnake(f.Name())
+	return fun
+}
+
+func (p Py3Binder) ToGenericFunc(f cgo.Func) *PyFunc {
 	pyParams := make([]*PyParam, f.Signature().Params().Len())
 	for i := 0; i < f.Signature().Params().Len(); i++ {
 		param := f.Signature().Params().At(i)
-		pyParams[i] = NewPyParam(param)
+		pyParams[i] = p.NewPyParam(param)
 	}
 
 	pyResults := make([]*PyParam, f.Signature().Results().Len())
 	for i := 0; i < f.Signature().Results().Len(); i++ {
 		param := f.Signature().Results().At(i)
-		pyResults[i] = NewPyParam(param)
+		pyResults[i] = p.NewPyParam(param)
 	}
-
 	return &PyFunc{
 		fun:     f,
 		Name:    ToSnake(f.Name()),
