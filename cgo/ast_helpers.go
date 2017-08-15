@@ -46,8 +46,6 @@ var (
 		X:   NewIdent("C"),
 		Sel: NewIdent("char"),
 	})
-
-	uintptr = NewIdent("uintptr")
 )
 
 // CObjectStruct produces an AST struct which will represent a C exposed Object
