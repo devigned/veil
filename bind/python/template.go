@@ -94,6 +94,8 @@ class VeilList(MutableSequence):
 
     def __getitem__(self, idx):
         """Get a list item"""
+        if idx >= self.__len__():
+        	raise IndexError
         value = self.__get_method__("item")(self._veil_obj.uuid_ptr(), idx)
         return self.__go_type_output_transform__(value)
 
@@ -152,15 +154,15 @@ def {{$func.Name}}({{$func.PrintArgs}}):
       {{ $inTrx }}
     {{ end -}}
     {{$cret}} = _CffiHelper.lib.{{$func.Call -}}
-    {{ range $idx, $result := $func.Results -}}
+    {{ range $idx, $result := $func.Results }}
 		{{if $result.IsError -}}
 			if not VeilError.is_nil(cret.r1):
 				{{ printf "raise VeilError(%s.r%d)" $cret $idx -}}
 		{{end}}
-    {{ end -}}
-    return {{$func.PrintReturns}}
+	{{ end }}
 
-{{end}}
+    {{$func.PrintReturns}}
+{{end -}}
 
 {{range $_, $class := .Classes}}
 class {{$class.Name}}(VeilObject):
@@ -189,7 +191,7 @@ class {{$class.Name}}(VeilObject):
 						{{ printf "raise VeilError(%s.r%d)" $cret $idx -}}
 				{{end}}
 			{{ end -}}
-			return {{$func.PrintReturns}}
+			{{$func.PrintReturns}}
 
 		{{end}}
 

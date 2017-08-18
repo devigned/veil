@@ -19,10 +19,6 @@ const (
 	CFFI_HELPER_NAME        = "_CffiHelper"
 	HEADER_FILE_NAME        = "output.h"
 	FILE_NAME               = "generated.py"
-	STRING_INPUT_TRANSFORM  = "%s = ffi.new(\"char[]\", %s.encode(\"utf-8\"))"
-	STRUCT_INPUT_TRANSFORM  = "%s = %s.uuid_ptr()"
-	STRING_OUTPUT_TRANSFORM = "_CffiHelper.c2py_string(%s)"
-	STRUCT_OUTPUT_TRANSFORM = "%s(%s)"
 )
 
 var (
@@ -74,7 +70,7 @@ func (p Binder) NewClass(s *cgo.Struct) *Class {
 	fields := []*Param{}
 	for i := 0; i < s.Struct().NumFields(); i++ {
 		field := s.Struct().Field(i)
-		if field.Exported() {
+		if cgo.ShouldGenerate(field) {
 			fields = append(fields, p.NewParam(s.Struct().Field(i)))
 		}
 	}

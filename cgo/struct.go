@@ -93,10 +93,9 @@ func (s Struct) FieldAccessorsAst() []ast.Decl {
 	var accessors []ast.Decl
 	for i := 0; i < s.Struct().NumFields(); i++ {
 		field := s.Struct().Field(i)
-		if !field.Exported() || strings.Contains(field.Type().String(), "/vendor/") {
-			continue
+		if ShouldGenerate(field) {
+			accessors = append(accessors, s.Getter(field), s.Setter(field))
 		}
-		accessors = append(accessors, s.Getter(field), s.Setter(field))
 	}
 
 	return accessors
@@ -195,4 +194,8 @@ func (s Struct) IsConstructor(f Func) bool {
 
 func (s Struct) ConstructorName(f Func) string {
 	return strings.Replace(f.Name(), s.Named.Obj().Name(), "", 1)
+}
+
+func ShouldGenerate(f *types.Var) bool {
+	return f.Exported() && !strings.Contains(f.Type().String(), "/vendor/")
 }

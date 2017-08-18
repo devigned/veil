@@ -37,18 +37,26 @@ func (f PyFunc) PrintArgs() string {
 }
 
 func (f PyFunc) PrintReturns() string {
+	returns := ""
 	if len(f.Results) > 1 {
 		names := []string{}
 		for i := 0; i < len(f.Results); i++ {
 			result := f.Results[i]
 			if !cgo.ImplementsError(result.underlying.Type()) {
-				names = append(names,
-					result.ReturnFormat(fmt.Sprintf(RETURN_VAR_NAME+".r%d", i)))
+				names = append(names, result.ReturnFormat(fmt.Sprintf(RETURN_VAR_NAME+".r%d", i)))
 			}
 		}
-		return strings.Join(names, ", ")
+		returns = strings.Join(names, ", ")
 	} else {
-		result := f.Results[0]
-		return result.ReturnFormat(RETURN_VAR_NAME)
+		if !cgo.ImplementsError(f.Results[0].underlying.Type()) {
+			result := f.Results[0]
+			returns = result.ReturnFormat(RETURN_VAR_NAME)
+		}
+	}
+
+	if returns != "" {
+		return "return " + returns
+	} else {
+		return ""
 	}
 }

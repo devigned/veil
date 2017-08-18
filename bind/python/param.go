@@ -1,10 +1,17 @@
 package python
 
 import (
-	"github.com/devigned/veil/core"
 	"fmt"
-	"go/types"
 	"github.com/devigned/veil/cgo"
+	"github.com/devigned/veil/core"
+	"go/types"
+)
+
+const (
+	STRING_OUTPUT_TRANSFORM = "_CffiHelper.c2py_string(%s)"
+	STRING_INPUT_TRANSFORM  = "%s = ffi.new(\"char[]\", %s.encode(\"utf-8\"))"
+	STRUCT_INPUT_TRANSFORM  = "%s = %s.uuid_ptr()"
+	STRUCT_OUTPUT_TRANSFORM = "%s(%s)"
 )
 
 type Param struct {
@@ -28,8 +35,12 @@ func (p Param) ReturnFormat(varName string) string {
 		}
 		return varName
 	case *types.Named:
-		class := p.binder.NewClass(&cgo.Struct{Named: t})
-		return fmt.Sprintf(STRUCT_OUTPUT_TRANSFORM, class.Name(), varName)
+		if cgo.ImplementsError(t) {
+			return fmt.Sprintf(STRUCT_OUTPUT_TRANSFORM, "VeilError", varName)
+		} else {
+			class := p.binder.NewClass(&cgo.Struct{Named: t})
+			return fmt.Sprintf(STRUCT_OUTPUT_TRANSFORM, class.Name(), varName)
+		}
 	case *types.Pointer:
 		if named, ok := t.Elem().(*types.Named); ok {
 			class := p.binder.NewClass(&cgo.Struct{Named: named})
