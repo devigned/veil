@@ -1,14 +1,12 @@
 package bind
 
 import (
-	"fmt"
-	"go/ast"
-
 	"bufio"
+	"fmt"
 	"github.com/devigned/veil/bind/python"
 	"github.com/devigned/veil/cgo"
 	"github.com/devigned/veil/core"
-	"go/parser"
+	"go/ast"
 	"go/printer"
 	"go/token"
 	"os"
@@ -40,7 +38,6 @@ func (b wrapper) Bind(outDir string) error {
 	w.Flush()
 
 	buildSharedLib(outDir)
-
 	b.binder.Bind(outDir)
 	return nil
 }
@@ -76,12 +73,11 @@ func buildSharedLib(outDir string) error {
 
 // toCodeFile generates a CGo wrapper around the pkg
 func toCodeFile(pkg *cgo.Package) *ast.File {
-
-	// printPracticeAst()
 	cImport := cgo.Imports("C")
 	cImport.Doc = &ast.CommentGroup{
 		List: cgo.IncludeComments("<stdlib.h>"),
 	}
+
 	declarations := []ast.Decl{
 		cImport,
 		cgo.Imports("fmt", "sync", "unsafe", "github.com/satori/go.uuid"), //, "strconv", "strings", "os"
@@ -100,7 +96,6 @@ func toCodeFile(pkg *cgo.Package) *ast.File {
 
 	declarations = append(declarations, pkg.ToAst()...)
 	declarations = append(declarations, cgo.MainFunc())
-
 	mainFile := &ast.File{
 		Name: &ast.Ident{
 			Name: "main",
@@ -109,26 +104,4 @@ func toCodeFile(pkg *cgo.Package) *ast.File {
 	}
 
 	return mainFile
-}
-
-func printPracticeAst() {
-	src := `
-package main
-
-//#include <stdlib.h>
-import (
-	"C"
-)
-
-func blah () {
-	i = 3
-	foo := "bar"
-	a := []string{}
-	a = append(a[:i], append([]string{foo}, a[i:]...)...)
-}
-		`
-
-	fset := token.NewFileSet() // positions are relative to fset
-	f, _ := parser.ParseFile(fset, "src.go", src, parser.ParseComments)
-	ast.Print(fset, f)
 }
