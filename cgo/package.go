@@ -14,6 +14,7 @@ import (
 	"github.com/emirpasic/gods/sets/hashset"
 	"github.com/marstr/collection"
 	"go/ast"
+	"strings"
 )
 
 // Package is a container for ast.Types and Docs
@@ -109,6 +110,13 @@ func (p Package) Name() string {
 }
 
 func (p *Package) build() error {
+	shouldExport := hashset.New()
+	addExport := func(item AstTransformer) {
+		if !shouldExport.Contains(item.ExportName()) {
+			shouldExport.Add(item.ExportName())
+			p.exportedAstables.Add(item)
+		}
+	}
 
 	scope := p.pkg.Scope()
 	exportedObjects := collection.AsEnumerable(scope.Names()).Enumerate(nil).
@@ -123,10 +131,12 @@ func (p *Package) build() error {
 		switch obj := obj.(type) {
 		case *types.Func:
 			funcWrapper := Func{obj}
-			p.funcs.Add(funcWrapper)
-			p.exportedAstables.Add(funcWrapper)
-			for _, astTransformable := range funcExportedTypes(obj) {
-				p.exportedAstables.Add(astTransformable)
+			if funcWrapper.IsExportable() {
+				p.funcs.Add(funcWrapper)
+				p.exportedAstables.Add(funcWrapper)
+				for _, astTransformable := range funcExportedTypes(obj) {
+					addExport(astTransformable)
+				}
 			}
 		case *types.TypeName:
 			named := obj.Type().(*types.Named)
@@ -134,17 +144,17 @@ func (p *Package) build() error {
 			case *types.Struct:
 				structWapper := &Struct{named}
 				p.namedStructs.Add(structWapper)
-				p.exportedAstables.Add(structWapper)
+				addExport(structWapper)
 				for _, v := range structWapper.Methods() {
 					for _, astTransformable := range funcExportedTypes(v) {
-						p.exportedAstables.Add(astTransformable)
+						addExport(astTransformable)
 					}
 				}
 
 				for i := 0; i < structWapper.Struct().NumFields(); i++ {
 					field := structWapper.Struct().Field(i)
 					if astTransformable, ok := shouldWrapField(field); ok {
-						p.exportedAstables.Add(astTransformable)
+						addExport(astTransformable)
 					}
 				}
 			default:
@@ -154,13 +164,41 @@ func (p *Package) build() error {
 	}
 
 	for _, item := range p.exportedAstables.Values() {
-		t := item.(types.Type)
-		underlying := t.Underlying()
-		switch named := underlying.(type) {
-		case *types.Named:
-			path := named.Obj().Pkg().Path()
+
+		addObjAlias := func(typeName *types.TypeName) {
+			path := typeName.Pkg().Path()
 			alias := PkgPathAliasFromString(path)
 			p.packageAliases[alias] = path
+		}
+
+		var addNamedOrPtr func(typ types.Type)
+		addNamedOrPtr = func(typ types.Type) {
+			if named, ok := typ.(*types.Named); ok {
+				addObjAlias(named.Obj())
+			}
+			if ptr, ok := typ.(*types.Pointer); ok {
+				addNamedOrPtr(ptr.Elem())
+			}
+		}
+
+		t := item.(types.Type)
+		underlying := t.Underlying()
+		switch typ := underlying.(type) {
+		case *types.Named:
+			addObjAlias(typ.Obj())
+		case Slice:
+			addNamedOrPtr(typ.Elem())
+		case Func:
+			params := typ.Signature().Params()
+			for i := 0; i < params.Len(); i++ {
+				param := params.At(i)
+				addNamedOrPtr(param.Type())
+			}
+			results := typ.Signature().Results()
+			for i := 0; i < results.Len(); i++ {
+				result := results.At(i)
+				addNamedOrPtr(result.Type())
+			}
 		}
 	}
 
@@ -217,16 +255,21 @@ func funcExportedTypes(fun *types.Func) []AstTransformer {
 }
 
 func shouldWrapType(t types.Type) (AstTransformer, bool) {
-	underlying := t.Underlying()
-	switch u := underlying.(type) {
+	switch u := t.(type) {
 	case *types.Basic:
 		return nil, false
 	case *types.Pointer:
 		return shouldWrapType(u.Elem())
 	case *types.Slice:
 		return NewSlice(u.Elem()), true
-	case *types.Array:
-		return NewArray(u.Elem(), u.Len()), true
+	case *types.Named:
+		if !ImplementsError(u) && !strings.Contains(u.String(), "/vendor/") {
+			return &Struct{u}, true
+		} else {
+			return nil, false
+		}
+	//case *types.Array:
+	//	return NewArray(u.Elem(), u.Len()), true
 	default:
 		return nil, false
 	}

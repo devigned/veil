@@ -36,22 +36,72 @@ func (s Slice) ToAst() []ast.Decl {
 		s.ItemAst(),
 		s.ItemSetAst(),
 		s.ItemAppendAst(),
+		s.ItemDeleteAst(),
+		s.LenAst(),
+		s.ItemInsertAst(),
 	}
 }
 
+func (s Slice) ExportName() string {
+	return s.CGoName()
+}
+
+func (s Slice) MethodName() string {
+	pkgAlias, name := s.ElementPackageAliasAndPath(nil)
+	return pkgAlias + "_" + name
+}
+
+func (s Slice) ElementName() string {
+	pkgAlias, name := s.ElementPackageAliasAndPath(nil)
+	if pkgAlias == "" {
+		return name
+	} else {
+		return pkgAlias + "." + name
+	}
+}
+
+func (s Slice) ElementPackageAliasAndPath(typ types.Type) (string, string) {
+	if typ == nil {
+		typ = s.elem
+	}
+
+	objToString := func(typeName *types.TypeName) (string, string) {
+		return PkgPathAliasFromString(typeName.Pkg().Path()), typeName.Name()
+	}
+	switch t := typ.(type) {
+	case *types.Basic:
+		return "", t.Name()
+	case *types.Named:
+		obj := t.Obj()
+		return objToString(obj)
+	case *types.Pointer:
+		return s.ElementPackageAliasAndPath(t.Elem())
+	default:
+		return "", t.String()
+	}
+}
+
+func (s Slice) Elem() types.Type {
+	return s.elem
+}
+
 func (s Slice) GoName() string {
-	return "[]" + s.elem.String()
+	if _, ok := s.elem.(*types.Pointer); ok {
+		return "[]*" + s.ElementName()
+	} else {
+		return "[]" + s.ElementName()
+	}
 }
 
 func (s Slice) CGoName() string {
-	return "slice_of_" + s.elem.String()
+	return "slice_of_" + s.MethodName()
 }
 
 // NewAst produces the []ast.Decl to construct a slice type and increment it's reference count
 func (s Slice) NewAst() ast.Decl {
 	functionName := s.CGoName() + "_new"
 	goType := &ast.ArrayType{
-		Elt: NewIdent(s.elem.String()),
+		Elt: NewIdent(s.ElementName()),
 	}
 	return NewAst(functionName, goType)
 }
@@ -63,6 +113,43 @@ func (s Slice) StringAst() ast.Decl {
 	return StringAst(functionName, goTypeIdent)
 }
 
+func (s Slice) LenAst() ast.Decl {
+	functionName := s.CGoName() + "_len"
+	selfIdent := NewIdent("self")
+	goTypeIdent := NewIdent(s.GoName())
+	itemsIdent := NewIdent("items")
+
+	castExpression := CastUnsafePtrOfTypeUuid(DeRef(goTypeIdent), selfIdent)
+
+	funcDecl := &ast.FuncDecl{
+		Doc: &ast.CommentGroup{
+			List: ExportComments(functionName),
+		},
+		Name: NewIdent(functionName),
+		Type: &ast.FuncType{
+			Params: InstanceMethodParams(),
+			Results: &ast.FieldList{
+				List: []*ast.Field{{Type: NewIdent("int")}},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{itemsIdent},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{castExpression},
+				},
+				Return(&ast.CallExpr{
+					Fun:  NewIdent("len"),
+					Args: []ast.Expr{DeRef(itemsIdent)},
+				}),
+			},
+		},
+	}
+
+	return funcDecl
+}
+
 func (s Slice) ItemAst() ast.Decl {
 	functionName := s.CGoName() + "_item"
 	selfIdent := NewIdent("self")
@@ -72,7 +159,10 @@ func (s Slice) ItemAst() ast.Decl {
 	itemsIdent := NewIdent("items")
 
 	castExpression := CastUnsafePtrOfTypeUuid(DeRef(goTypeIdent), selfIdent)
-	itemField := VarToField(types.NewVar(0, nil, "", s.elem), s.elem)
+	itemField := &ast.Field{
+		Type:  TypeToArgumentTypeExpr(s.Elem()),
+		Names: []*ast.Ident{NewIdent("item")},
+	}
 
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
@@ -129,7 +219,12 @@ func (s Slice) ItemSetAst() ast.Decl {
 	itemIdent := NewIdent("item")
 
 	castExpression := CastUnsafePtrOfTypeUuid(DeRef(goTypeIdent), selfIdent)
-	itemField := VarToField(types.NewVar(0, nil, itemIdent.Name, s.elem), s.elem)
+	itemField := &ast.Field{
+		Type:  TypeToArgumentTypeExpr(s.Elem()),
+		Names: []*ast.Ident{NewIdent("item")},
+	}
+
+	rhsCast := CastExpr(s.elem, itemIdent)
 
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
@@ -168,10 +263,167 @@ func (s Slice) ItemSetAst() ast.Decl {
 							Index: indexIdent,
 						},
 					},
+					Rhs: []ast.Expr{rhsCast},
+					Tok: token.ASSIGN,
+				},
+			},
+		},
+	}
+
+	return funcDecl
+}
+
+// ItemDeleteAst returns a function declaration which deletes an item from the slice
+func (s Slice) ItemDeleteAst() ast.Decl {
+	functionName := s.CGoName() + "_item_del"
+	selfIdent := NewIdent("self")
+	indexIdent := NewIdent("i")
+	indexTypeIdent := NewIdent("int")
+	goTypeIdent := NewIdent(s.GoName())
+	itemsIdent := NewIdent("items")
+
+	castExpression := CastUnsafePtrOfTypeUuid(DeRef(goTypeIdent), selfIdent)
+
+	funcDecl := &ast.FuncDecl{
+		Doc: &ast.CommentGroup{
+			List: ExportComments(functionName),
+		},
+		Name: NewIdent(functionName),
+		Type: &ast.FuncType{
+			Params: InstanceMethodParams(
+				[]*ast.Field{
+					{
+						Names: []*ast.Ident{indexIdent},
+						Type:  indexTypeIdent,
+					},
+				}...),
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				// items := (*[]type)(cgo_get_ref(cgo_get_uuid_from_ptr(self)))
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						itemsIdent,
+					},
 					Rhs: []ast.Expr{
-						CastExpr(s.elem, itemIdent),
+						castExpression,
+					},
+					Tok: token.DEFINE,
+				},
+				// *items = append(*items[:i], *items[i+1:]...)
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						DeRef(itemsIdent),
 					},
 					Tok: token.ASSIGN,
+					Rhs: []ast.Expr{
+						&ast.CallExpr{
+							Fun: NewIdent("append"),
+							Args: []ast.Expr{
+								&ast.SliceExpr{
+									X:    DeRef(itemsIdent),
+									High: indexIdent,
+								},
+								&ast.SliceExpr{
+									X: DeRef(itemsIdent),
+									Low: &ast.BinaryExpr{
+										X:  indexIdent,
+										Op: token.ADD,
+										Y: &ast.BasicLit{
+											Kind:  token.INT,
+											Value: "1",
+										},
+									},
+								},
+							},
+							Ellipsis: token.Pos(-1),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	return funcDecl
+}
+
+// ItemInsertAst returns a function declaration which inserts an item into the slice
+func (s Slice) ItemInsertAst() ast.Decl {
+	functionName := s.CGoName() + "_item_insert"
+	selfIdent := NewIdent("self")
+	indexIdent := NewIdent("i")
+	indexTypeIdent := NewIdent("int")
+	goTypeIdent := NewIdent(s.GoName())
+	itemsIdent := NewIdent("items")
+	itemIdent := NewIdent("item")
+
+	castExpression := CastUnsafePtrOfTypeUuid(DeRef(goTypeIdent), selfIdent)
+	itemField := &ast.Field{
+		Type:  TypeToArgumentTypeExpr(s.Elem()),
+		Names: []*ast.Ident{NewIdent("item")},
+	}
+
+	funcDecl := &ast.FuncDecl{
+		Doc: &ast.CommentGroup{
+			List: ExportComments(functionName),
+		},
+		Name: NewIdent(functionName),
+		Type: &ast.FuncType{
+			Params: InstanceMethodParams(
+				[]*ast.Field{
+					{
+						Names: []*ast.Ident{indexIdent},
+						Type:  indexTypeIdent,
+					},
+					itemField,
+				}...),
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				// items := (*[]type)(cgo_get_ref(cgo_get_uuid_from_ptr(self)))
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						itemsIdent,
+					},
+					Rhs: []ast.Expr{
+						castExpression,
+					},
+					Tok: token.DEFINE,
+				},
+				// *items = append(a[:i], append([]T{x}, a[i:]...)...)
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						DeRef(itemsIdent),
+					},
+					Tok: token.ASSIGN,
+					Rhs: []ast.Expr{
+						&ast.CallExpr{
+							Fun: NewIdent("append"),
+							Args: []ast.Expr{
+								&ast.SliceExpr{
+									X:    DeRef(itemsIdent),
+									High: indexIdent,
+								},
+								&ast.CallExpr{
+									Fun: NewIdent("append"),
+									Args: []ast.Expr{
+										&ast.CompositeLit{
+											Type: goTypeIdent,
+											Elts: []ast.Expr{
+												CastExpr(s.elem, itemIdent),
+											},
+										},
+										&ast.SliceExpr{
+											X:   DeRef(itemsIdent),
+											Low: indexIdent,
+										},
+									},
+									Ellipsis: token.Pos(-1),
+								},
+							},
+							Ellipsis: token.Pos(-1),
+						},
+					},
 				},
 			},
 		},
@@ -189,7 +441,10 @@ func (s Slice) ItemAppendAst() ast.Decl {
 	itemIdent := NewIdent("item")
 
 	castExpression := CastUnsafePtrOfTypeUuid(DeRef(goTypeIdent), selfIdent)
-	field := VarToField(types.NewVar(0, nil, itemIdent.Name, s.elem), s.elem)
+	itemField := &ast.Field{
+		Type:  TypeToArgumentTypeExpr(s.Elem()),
+		Names: []*ast.Ident{NewIdent("item")},
+	}
 
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
@@ -197,7 +452,7 @@ func (s Slice) ItemAppendAst() ast.Decl {
 		},
 		Name: NewIdent(functionName),
 		Type: &ast.FuncType{
-			Params: InstanceMethodParams(field),
+			Params: InstanceMethodParams(itemField),
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{

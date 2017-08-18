@@ -5,6 +5,7 @@ import (
 	"go/ast"
 
 	"bufio"
+	"github.com/devigned/veil/bind/python"
 	"github.com/devigned/veil/cgo"
 	"github.com/devigned/veil/core"
 	"go/parser"
@@ -16,16 +17,11 @@ import (
 )
 
 var (
-	registry = map[string]func(*cgo.Package) Bindable{"py3": NewPy3Binder}
+	registry = map[string]func(*cgo.Package) core.Bindable{"py3": python.NewBinder}
 )
 
-// Bindable is the interface for any object that will create a binding for a golang.Package
-type Bindable interface {
-	Bind(outDir string) error
-}
-
 type wrapper struct {
-	binder Bindable
+	binder core.Bindable
 	pkg    *cgo.Package
 }
 
@@ -50,7 +46,7 @@ func (b wrapper) Bind(outDir string) error {
 }
 
 // NewBinder is a factory method for creating a new binder for a given target
-func NewBinder(pkg *cgo.Package, target string) (Bindable, error) {
+func NewBinder(pkg *cgo.Package, target string) (core.Bindable, error) {
 	binderFactory, ok := registry[target]
 	if !ok {
 		return nil, core.NewSystemError(fmt.Sprintf("I don't know how to create a binder for %s", target))
@@ -123,6 +119,13 @@ package main
 import (
 	"C"
 )
+
+func blah () {
+	i = 3
+	foo := "bar"
+	a := []string{}
+	a = append(a[:i], append([]string{foo}, a[i:]...)...)
+}
 		`
 
 	fset := token.NewFileSet() // positions are relative to fset

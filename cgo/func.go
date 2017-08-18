@@ -21,6 +21,26 @@ func (f Func) Signature() *types.Signature {
 	return sig
 }
 
+func (f Func) IsExportable() bool {
+	for i := 0; i < f.Signature().Params().Len(); i++ {
+		param := f.Signature().Params().At(i)
+		switch param.Type().(type) {
+		case *types.Chan:
+			return false
+		}
+	}
+
+	for i := 0; i < f.Signature().Results().Len(); i++ {
+		result := f.Signature().Results().At(i)
+		switch result.Type().(type) {
+		case *types.Chan:
+			return false
+		}
+	}
+
+	return true
+}
+
 // Underlying returns the string representation of the type (types.Type)
 func (f Func) String() string {
 	return f.Func.FullName() + ": " + types.TypeString(f.Underlying(), nil)
@@ -41,6 +61,10 @@ func (f Func) ToAst() []ast.Decl {
 	return []ast.Decl{
 		FuncAst(&f),
 	}
+}
+
+func (f Func) ExportName() string {
+	return f.CGoName()
 }
 
 func (f Func) CGoName() string {

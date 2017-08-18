@@ -73,6 +73,10 @@ func (s Struct) ToAst() []ast.Decl {
 	return decls
 }
 
+func (s Struct) ExportName() string {
+	return s.CGoName()
+}
+
 // NewAst produces the []ast.Decl to construct a slice type and increment it's reference count
 func (s Struct) NewAst() ast.Decl {
 	functionName := s.NewMethodName()
@@ -89,7 +93,7 @@ func (s Struct) FieldAccessorsAst() []ast.Decl {
 	var accessors []ast.Decl
 	for i := 0; i < s.Struct().NumFields(); i++ {
 		field := s.Struct().Field(i)
-		if !field.Exported() {
+		if !field.Exported() || strings.Contains(field.Type().String(), "/vendor/") {
 			continue
 		}
 		accessors = append(accessors, s.Getter(field), s.Setter(field))
@@ -99,12 +103,12 @@ func (s Struct) FieldAccessorsAst() []ast.Decl {
 }
 
 func (s Struct) Getter(field *types.Var) ast.Decl {
-	functionName := s.CGoFieldName(field) + "_get"
+	functionName := s.FieldName(field) + "_get"
 	selfIdent := NewIdent("self")
 	localVarIdent := NewIdent("value")
 	fieldIdent := NewIdent(field.Name())
-
 	castExpression := CastUnsafePtrOfTypeUuid(DeRef(s.CGoType()), selfIdent)
+
 	assignment := &ast.AssignStmt{
 		Lhs: []ast.Expr{localVarIdent},
 		Tok: token.DEFINE,
@@ -116,64 +120,39 @@ func (s Struct) Getter(field *types.Var) ast.Decl {
 		},
 	}
 
-	results := &ast.FieldList{}
-	body := &ast.BlockStmt{}
-	body.List = []ast.Stmt{
-		assignment,
-		Return(CastOut(field.Type(), localVarIdent)),
-	}
-
-	if basic, ok := field.Type().(*types.Basic); ok {
-		if basic.Kind() == types.String {
-			results.List = []*ast.Field{{Type: charStarType}}
-		} else {
-			results.List = []*ast.Field{{Type: NewIdent(basic.Name())}}
-		}
-	} else {
-		results.List = []*ast.Field{{Type: unsafePointer}}
-	}
-
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
 			List: ExportComments(functionName),
 		},
 		Name: NewIdent(functionName),
 		Type: &ast.FuncType{
-			Params:  InstanceMethodParams(),
-			Results: results,
+			Params: InstanceMethodParams(),
+			Results: &ast.FieldList{
+				List: []*ast.Field{{Type: TypeToArgumentTypeExpr(field.Type())}},
+			},
 		},
-		Body: body,
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				assignment,
+				Return(CastOut(field.Type(), localVarIdent)),
+			},
+		},
 	}
 
 	return funcDecl
 }
 
 func (s Struct) Setter(field *types.Var) ast.Decl {
-	functionName := s.CGoFieldName(field) + "_set"
+	functionName := s.FieldName(field) + "_set"
 	selfIdent := NewIdent("self")
 	localVarIdent := NewIdent("value")
 	fieldIdent := NewIdent(field.Name())
-
 	castExpression := CastUnsafePtrOfTypeUuid(DeRef(s.CGoType()), selfIdent)
 
-	var params *ast.FieldList
 	typedField := UnsafePtrOrBasic(field, field.Type())
 	typedField.Names = []*ast.Ident{localVarIdent}
-	body := &ast.BlockStmt{}
-	params = InstanceMethodParams(typedField)
+	params := InstanceMethodParams(typedField)
 	rhs := CastExpr(field.Type(), localVarIdent)
-	body.List = []ast.Stmt{
-		&ast.AssignStmt{
-			Lhs: []ast.Expr{
-				&ast.SelectorExpr{
-					X:   castExpression,
-					Sel: fieldIdent,
-				},
-			},
-			Tok: token.ASSIGN,
-			Rhs: []ast.Expr{rhs},
-		},
-	}
 
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
@@ -183,13 +162,26 @@ func (s Struct) Setter(field *types.Var) ast.Decl {
 		Type: &ast.FuncType{
 			Params: params,
 		},
-		Body: body,
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						&ast.SelectorExpr{
+							X:   castExpression,
+							Sel: fieldIdent,
+						},
+					},
+					Tok: token.ASSIGN,
+					Rhs: []ast.Expr{rhs},
+				},
+			},
+		},
 	}
 
 	return funcDecl
 }
 
-func (s Struct) CGoFieldName(field *types.Var) string {
+func (s Struct) FieldName(field *types.Var) string {
 	return s.CGoName() + "_" + field.Name()
 }
 

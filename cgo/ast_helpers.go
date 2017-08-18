@@ -1056,14 +1056,6 @@ func InstanceMethodParams(fields ...*ast.Field) *ast.FieldList {
 	return params
 }
 
-// UintPtr wraps an argument in a uintptr
-func UintPtr(arg ast.Expr) ast.Expr {
-	return &ast.CallExpr{
-		Fun:  NewIdent("uintptr"),
-		Args: []ast.Expr{arg},
-	}
-}
-
 // FuncAst returns an FuncDecl which wraps the func
 func FuncAst(f *Func) *ast.FuncDecl {
 	fun := f.Func
@@ -1162,29 +1154,25 @@ func ParamExpr(param *types.Var, t types.Type) ast.Expr {
 	return CastExpr(t, NewIdent(param.Name()))
 }
 
-// UintptrToUnsafePointer wraps the argument in an UnsafePointer
-func UintptrToUnsafePointer(arg ast.Expr) ast.Expr {
-	return &ast.CallExpr{
-		Fun:  unsafePointer,
-		Args: []ast.Expr{arg},
-	}
-}
-
 func CastExpr(t types.Type, ident ast.Expr) ast.Expr {
-
 	switch t := t.(type) {
 	case *types.Pointer:
-		return DeRef(CastExpr(t.Elem(), UintptrToUnsafePointer(ident)))
+		return Ref(CastExpr(t.Elem(), ident))
 	case *types.Named:
 		pkg := t.Obj().Pkg()
 		typeName := t.Obj().Name()
-		castExpr := DeRef(CastUnsafePtr(DeRef(&ast.SelectorExpr{
-			X:   NewIdent(PkgPathAliasFromString(pkg.Path())),
-			Sel: NewIdent(typeName),
-		}), UintptrToUnsafePointer(ident)))
+		castExpr := DeRef(CastUnsafePtrOfTypeUuid(
+			DeRef(&ast.SelectorExpr{
+				X:   NewIdent(PkgPathAliasFromString(pkg.Path())),
+				Sel: NewIdent(typeName),
+			}),
+			ident))
 		return castExpr
 	case *types.Slice:
-		return DeRef(CastUnsafePtr(DeRef(NewIdent("[]"+t.Elem().String())), UintptrToUnsafePointer(ident)))
+		slice := NewSlice(t.Elem())
+		goName := slice.GoName()
+		castExpr := DeRef(CastUnsafePtrOfTypeUuid(DeRef(NewIdent(goName)), ident))
+		return castExpr
 	case *types.Basic:
 		if t.Kind() == types.String {
 			return ToGoString(ident)
@@ -1239,6 +1227,18 @@ func UnsafePtrOrBasic(p *types.Var, t types.Type) *ast.Field {
 	}
 }
 
+func TypeToArgumentTypeExpr(t types.Type) ast.Expr {
+	if basic, ok := t.(*types.Basic); ok {
+		if basic.Kind() == types.String {
+			return charStarType
+		} else {
+			return NewIdent(basic.Name())
+		}
+	} else {
+		return unsafePointer
+	}
+}
+
 // VarToField transforms a Var into an AST field
 func VarToField(p *types.Var, t types.Type) *ast.Field {
 	name := p.Name()
@@ -1253,6 +1253,12 @@ func VarToField(p *types.Var, t types.Type) *ast.Field {
 	switch typ := t.(type) {
 	case *types.Named:
 		return NamedToField(p, typ)
+	case *types.Pointer:
+		if named, ok := typ.Elem().(*types.Named); ok {
+			return NamedToField(p, named)
+		} else {
+			return defaultAction()
+		}
 	case *types.Basic:
 		if typ.Kind() == types.String {
 			return &ast.Field{
@@ -1345,5 +1351,5 @@ func PkgPathAliasFromString(path string) string {
 }
 
 func splitPkgPath(r rune) bool {
-	return r == '.' || r == '/'
+	return r == '.' || r == '/' || r == '-'
 }
