@@ -1,12 +1,12 @@
 package cgo
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"regexp"
 	"strings"
-	"fmt"
 )
 
 var (
@@ -19,7 +19,7 @@ type Struct struct {
 }
 
 func NewStruct(named *types.Named) *Struct {
-	if _, ok := named.Underlying().(*types.Struct); !ok{
+	if _, ok := named.Underlying().(*types.Struct); !ok {
 		panic("only structs belong in structs")
 	}
 	return &Struct{named}
@@ -27,7 +27,7 @@ func NewStruct(named *types.Named) *Struct {
 
 // Struct returns the underlying struct
 func (s Struct) Struct() *types.Struct {
-	if _, ok := s.Named.Underlying().(*types.Struct); !ok{
+	if _, ok := s.Named.Underlying().(*types.Struct); !ok {
 		fmt.Println(s.Named)
 	}
 	return s.Named.Underlying().(*types.Struct)
