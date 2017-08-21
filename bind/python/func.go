@@ -47,7 +47,7 @@ func (f PyFunc) PrintReturns() string {
 			}
 		}
 		returns = strings.Join(names, ", ")
-	} else {
+	} else if len(f.Results) == 1 {
 		if !cgo.ImplementsError(f.Results[0].underlying.Type()) {
 			result := f.Results[0]
 			returns = result.ReturnFormat(RETURN_VAR_NAME)

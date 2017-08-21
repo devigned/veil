@@ -193,10 +193,26 @@ class {{$class.Name}}(VeilObject):
 			{{ end -}}
 			{{$func.PrintReturns}}
 
-		{{end}}
+		{{end -}}
 
-		# Properties
+		{{if $class.Methods}}# Methods{{end}}
+		{{range $_, $func := $class.Methods }}
+		def {{$func.Name}}(self{{if $func.PrintArgs}}, {{end}}{{$func.PrintArgs}}):
+			{{ range $_, $inTrx := $func.InputTransforms -}}
+			  {{ $inTrx }}
+			{{ end -}}
+			{{$cret}} = _CffiHelper.lib.{{$func.Call -}}
+			{{ range $idx, $result := $func.Results -}}
+				{{if $result.IsError }}
+			if not VeilError.is_nil(cret.r1):
+				{{ printf "raise VeilError(%s.r%d)" $cret $idx -}}
+				{{end}}
+			{{ end -}}
+			{{$func.PrintReturns}}
 
+		{{end -}}
+
+		{{if $class.Fields}}# Properties{{end}}
 		{{ range $_, $field := $class.Fields -}}
 		@property
 		def {{$field.Name}}(self):

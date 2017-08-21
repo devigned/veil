@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	RETURN_VAR_NAME         = "cret"
-	CFFI_HELPER_NAME        = "_CffiHelper"
-	HEADER_FILE_NAME        = "output.h"
-	FILE_NAME               = "generated.py"
+	RETURN_VAR_NAME  = "cret"
+	CFFI_HELPER_NAME = "_CffiHelper"
+	HEADER_FILE_NAME = "output.h"
+	FILE_NAME        = "generated.py"
 )
 
 var (
@@ -56,10 +56,11 @@ func NewBinder(pkg *cgo.Package) core.Bindable {
 }
 
 func (p Binder) NewList(slice *cgo.Slice) *List {
-	sliceType := core.ToCap(slice.ElementName())
+	_, name := slice.ElementPackageAliasAndPath(nil)
+	sliceType := core.ToCap(name)
 	v := types.NewVar(token.Pos(0), nil, "value", slice.Elem())
 	return &List{
-		MethodPrefix: slice.CGoName(),
+		MethodPrefix: slice.MethodName(),
 		SliceType:    sliceType,
 		InputFormat:  p.NewParam(v).InputFormat,
 		OutputFormat: p.NewParam(v).ReturnFormat,
@@ -82,11 +83,17 @@ func (p Binder) NewClass(s *cgo.Struct) *Class {
 		}
 	}
 
+	methods := []*PyFunc{}
+	for _, f := range s.Methods() {
+		methods = append(methods, p.ToFunc(cgo.Func{Func: f}))
+	}
+
 	return &Class{
 		binder:       &p,
 		Struct:       s,
 		Fields:       fields,
 		Constructors: constructors,
+		Methods:      methods,
 	}
 }
 

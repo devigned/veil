@@ -37,13 +37,15 @@ func (p Param) ReturnFormat(varName string) string {
 	case *types.Named:
 		if cgo.ImplementsError(t) {
 			return fmt.Sprintf(STRUCT_OUTPUT_TRANSFORM, "VeilError", varName)
-		} else {
-			class := p.binder.NewClass(&cgo.Struct{Named: t})
+		} else if _, ok := t.Underlying().(*types.Struct); ok {
+			class := p.binder.NewClass(cgo.NewStruct(t))
 			return fmt.Sprintf(STRUCT_OUTPUT_TRANSFORM, class.Name(), varName)
+		} else {
+			return varName
 		}
 	case *types.Pointer:
 		if named, ok := t.Elem().(*types.Named); ok {
-			class := p.binder.NewClass(&cgo.Struct{Named: named})
+			class := p.binder.NewClass(cgo.NewStruct(named))
 			return fmt.Sprintf(STRUCT_OUTPUT_TRANSFORM, class.Name(), varName)
 		}
 		return varName

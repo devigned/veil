@@ -21,8 +21,6 @@ import (
 type Package struct {
 	pkg              *types.Package
 	doc              *doc.Package
-	funcs            *hashset.Set
-	namedStructs     *hashset.Set
 	exportedAstables *hashset.Set
 	packageAliases   map[string]string
 }
@@ -65,8 +63,6 @@ func NewPackage(pkgPath string, workDir string) (*Package, error) {
 	veilPkg := &Package{
 		pkg:              typesPkg,
 		doc:              docPkg,
-		funcs:            hashset.New(),
-		namedStructs:     hashset.New(),
 		exportedAstables: hashset.New(),
 		packageAliases:   map[string]string{},
 	}
@@ -79,19 +75,23 @@ func NewPackage(pkgPath string, workDir string) (*Package, error) {
 }
 
 func (p Package) Funcs() []Func {
-	values := p.funcs.Values()
-	output := make([]Func, len(values))
-	for i, item := range values {
-		output[i] = item.(Func)
+	values := p.exportedAstables.Values()
+	output := []Func{}
+	for _, item := range values {
+		if cast, ok := item.(Func); ok {
+			output = append(output, cast)
+		}
 	}
 	return output
 }
 
 func (p Package) Structs() []*Struct {
-	values := p.namedStructs.Values()
-	output := make([]*Struct, len(values))
-	for i, item := range values {
-		output[i] = item.(*Struct)
+	values := p.exportedAstables.Values()
+	output := []*Struct{}
+	for _, item := range values {
+		if cast, ok := item.(*Struct); ok {
+			output = append(output, cast)
+		}
 	}
 	return output
 }
@@ -132,7 +132,6 @@ func (p *Package) build() error {
 		case *types.Func:
 			funcWrapper := Func{obj}
 			if funcWrapper.IsExportable() {
-				p.funcs.Add(funcWrapper)
 				p.exportedAstables.Add(funcWrapper)
 				for _, astTransformable := range funcExportedTypes(obj) {
 					addExport(astTransformable)
@@ -142,8 +141,7 @@ func (p *Package) build() error {
 			named := obj.Type().(*types.Named)
 			switch named.Underlying().(type) {
 			case *types.Struct:
-				structWapper := &Struct{named}
-				p.namedStructs.Add(structWapper)
+				structWapper := NewStruct(named)
 				addExport(structWapper)
 				for _, v := range structWapper.Methods() {
 					for _, astTransformable := range funcExportedTypes(v) {
@@ -154,11 +152,16 @@ func (p *Package) build() error {
 				for i := 0; i < structWapper.Struct().NumFields(); i++ {
 					field := structWapper.Struct().Field(i)
 					if astTransformable, ok := shouldWrapField(field); ok {
+						if slice, ok := field.Type().(*types.Slice); ok {
+							if typ, ok := shouldWrapType(slice.Elem()); ok {
+								addExport(typ)
+							}
+						}
 						addExport(astTransformable)
 					}
 				}
 			default:
-				return core.NewSystemError("I don't know how to handle type names that arn't structs: ", obj)
+				return core.NewSystemError("I don't know how to handle type names that aren't structs: ", obj)
 			}
 		}
 	}
@@ -234,19 +237,27 @@ func (p Package) IsConstructor(f Func) bool {
 func funcExportedTypes(fun *types.Func) []AstTransformer {
 	typs := []AstTransformer{}
 	sig := fun.Type().(*types.Signature)
+	vars := []*types.Var{}
+
 	params := sig.Params()
 	for i := 0; i < params.Len(); i++ {
 		param := params.At(i)
-		paramType := param.Type()
-		if typ, ok := shouldWrapType(paramType); ok {
-			typs = append(typs, typ)
-		}
+		vars = append(vars, param)
 	}
 
 	results := sig.Results()
 	for i := 0; i < results.Len(); i++ {
 		param := results.At(i)
-		paramType := param.Type()
+		vars = append(vars, param)
+	}
+
+	for _, v := range vars {
+		paramType := v.Type()
+		if slice, ok := paramType.(*types.Slice); ok {
+			if typ, ok := shouldWrapType(slice.Elem()); ok {
+				typs = append(typs, typ)
+			}
+		}
 		if typ, ok := shouldWrapType(paramType); ok {
 			typs = append(typs, typ)
 		}
@@ -264,7 +275,7 @@ func shouldWrapType(t types.Type) (AstTransformer, bool) {
 		return NewSlice(u.Elem()), true
 	case *types.Named:
 		if !ImplementsError(u) && !strings.Contains(u.String(), "/vendor/") {
-			return &Struct{u}, true
+			return NewStruct(u), true
 		} else {
 			return nil, false
 		}

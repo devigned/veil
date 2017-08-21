@@ -10,6 +10,7 @@ type Class struct {
 	binder       *Binder
 	Fields       []*Param
 	Constructors []*PyFunc
+	Methods      []*PyFunc
 }
 
 func (c Class) Name() string {
