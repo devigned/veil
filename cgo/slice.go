@@ -48,7 +48,10 @@ func (s Slice) ExportName() string {
 
 func (s Slice) MethodName() string {
 	pkgAlias, name := s.ElementPackageAliasAndPath(nil)
-	return pkgAlias + "_" + name
+	if pkgAlias == "" {
+		return pkgAlias + "_" + name
+	}
+	return name
 }
 
 func (s Slice) ElementName() string {

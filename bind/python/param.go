@@ -28,7 +28,11 @@ func (p Param) IsError() bool {
 }
 
 func (p Param) ReturnFormat(varName string) string {
-	switch t := p.underlying.Type().(type) {
+	return p.returnFormat(p.underlying.Type(), varName)
+}
+
+func (p Param) returnFormat(typ types.Type, varName string) string {
+	switch t := typ.(type) {
 	case *types.Basic:
 		if t.Kind() == types.String {
 			return fmt.Sprintf(STRING_OUTPUT_TRANSFORM, varName)
@@ -44,11 +48,7 @@ func (p Param) ReturnFormat(varName string) string {
 			return varName
 		}
 	case *types.Pointer:
-		if named, ok := t.Elem().(*types.Named); ok {
-			class := p.binder.NewClass(cgo.NewStruct(named))
-			return fmt.Sprintf(STRUCT_OUTPUT_TRANSFORM, class.Name(), varName)
-		}
-		return varName
+		return p.returnFormat(t.Elem(), varName)
 	default:
 		return varName
 	}

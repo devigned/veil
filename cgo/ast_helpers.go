@@ -1205,13 +1205,13 @@ func Fields(funcParams *types.Tuple) *ast.FieldList {
 
 // UnsafePtrOrBasic returns a Basic typed field or an unsafe pointer if not a Basic type
 func UnsafePtrOrBasic(p *types.Var, t types.Type) *ast.Field {
-	returnDefault := func() *ast.Field {
+	defaultTransform := func() *ast.Field {
 		return &ast.Field{
 			Type:  unsafePointer,
 			Names: []*ast.Ident{NewIdent(p.Name())},
 		}
 	}
-	switch t.(type) {
+	switch typ := t.(type) {
 	case *types.Basic:
 		return VarToField(p, t)
 	//case *types.Named, *types.Interface:
@@ -1222,8 +1222,13 @@ func UnsafePtrOrBasic(p *types.Var, t types.Type) *ast.Field {
 	//	} else {
 	//		return returnDefault()
 	//	}
+	case *types.Pointer:
+		if basic, ok := typ.Elem().(*types.Basic); ok {
+			return VarToField(p, basic)
+		}
+		return defaultTransform()
 	default:
-		return returnDefault()
+		return defaultTransform()
 	}
 }
 
@@ -1256,6 +1261,11 @@ func VarToField(p *types.Var, t types.Type) *ast.Field {
 	case *types.Pointer:
 		if named, ok := typ.Elem().(*types.Named); ok {
 			return NamedToField(p, named)
+		} else if basic, ok := typ.Elem().(*types.Named); ok {
+			return &ast.Field{
+				Type:  NewIdent(basic.String()),
+				Names: []*ast.Ident{NewIdent(name)},
+			}
 		} else {
 			return defaultAction()
 		}

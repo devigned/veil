@@ -60,7 +60,7 @@ func (p Binder) NewList(slice *cgo.Slice) *List {
 	sliceType := core.ToCap(name)
 	v := types.NewVar(token.Pos(0), nil, "value", slice.Elem())
 	return &List{
-		MethodPrefix: slice.MethodName(),
+		MethodPrefix: slice.CGoName(),
 		SliceType:    sliceType,
 		InputFormat:  p.NewParam(v).InputFormat,
 		OutputFormat: p.NewParam(v).ReturnFormat,

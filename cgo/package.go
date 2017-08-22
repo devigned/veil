@@ -161,7 +161,7 @@ func (p *Package) build() error {
 					}
 				}
 			default:
-				return core.NewSystemError("I don't know how to handle type names that aren't structs: ", obj)
+				// return core.NewSystemError("I don't know how to handle type names that aren't structs: ", obj)
 			}
 		}
 	}
@@ -274,7 +274,8 @@ func shouldWrapType(t types.Type) (AstTransformer, bool) {
 	case *types.Slice:
 		return NewSlice(u.Elem()), true
 	case *types.Named:
-		if !ImplementsError(u) && !strings.Contains(u.String(), "/vendor/") {
+		_, isStruct := u.Underlying().(*types.Struct)
+		if !ImplementsError(u) && isStruct && !strings.Contains(u.String(), "/vendor/") {
 			return NewStruct(u), true
 		} else {
 			return nil, false
