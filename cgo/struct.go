@@ -38,7 +38,10 @@ func (s Struct) Methods() []*types.Func {
 	var methods []*types.Func
 	for i := 0; i < s.Named.NumMethods(); i++ {
 		meth := s.Named.Method(i)
-		methods = append(methods, meth)
+		fun := Func{meth}
+		if fun.IsExportable() {
+			methods = append(methods, meth)
+		}
 	}
 	return methods
 }
@@ -51,7 +54,7 @@ func (s Struct) String() string { return types.TypeString(s.Named, nil) }
 
 // CGoName returns the fully resolved name to the struct
 func (s Struct) CGoName() string {
-	return PkgPathAliasFromString(s.Named.Obj().Pkg().Path()) + "_" + s.Named.Obj().Name()
+	return PkgPathAliasFromString(s.PackagePath()) + "_" + s.Named.Obj().Name()
 }
 
 // CGoType returns the selector expression for the Struct aliased package and type
@@ -88,6 +91,15 @@ func (s Struct) ExportName() string {
 	return s.CGoName()
 }
 
+func (s Struct) PackagePath() string {
+	return s.Named.Obj().Pkg().Path()
+}
+
+func (s Struct) IsExportable() bool {
+	// default for structs is to export
+	return true
+}
+
 // NewAst produces the []ast.Decl to construct a slice type and increment it's reference count
 func (s Struct) NewAst() ast.Decl {
 	functionName := s.NewMethodName()
@@ -104,7 +116,7 @@ func (s Struct) FieldAccessorsAst() []ast.Decl {
 	var accessors []ast.Decl
 	for i := 0; i < s.Struct().NumFields(); i++ {
 		field := s.Struct().Field(i)
-		if ShouldGenerate(field) {
+		if ShouldGenerateField(field) {
 			accessors = append(accessors, s.Getter(field), s.Setter(field))
 		}
 	}
@@ -156,13 +168,20 @@ func (s Struct) Setter(field *types.Var) ast.Decl {
 	functionName := s.FieldName(field) + "_set"
 	selfIdent := NewIdent("self")
 	localVarIdent := NewIdent("value")
+	transformedLocalVarIdent := NewIdent("val")
 	fieldIdent := NewIdent(field.Name())
 	castExpression := CastUnsafePtrOfTypeUuid(DeRef(s.CGoType()), selfIdent)
-
 	typedField := UnsafePtrOrBasic(field, field.Type())
 	typedField.Names = []*ast.Ident{localVarIdent}
 	params := InstanceMethodParams(typedField)
-	rhs := CastExpr(field.Type(), localVarIdent)
+	firstAssignmentCastRhs := CastExpr(field.Type(), localVarIdent)
+	secondAssignment := ast.Expr(transformedLocalVarIdent)
+
+	if isStringPointer(field.Type()) {
+		strPtrCast := CastExpr(field.Type(), localVarIdent).(*ast.UnaryExpr)
+		firstAssignmentCastRhs = strPtrCast.X
+		secondAssignment = Ref(transformedLocalVarIdent)
+	}
 
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
@@ -175,6 +194,11 @@ func (s Struct) Setter(field *types.Var) ast.Decl {
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
 				&ast.AssignStmt{
+					Lhs: []ast.Expr{transformedLocalVarIdent},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{firstAssignmentCastRhs},
+				},
+				&ast.AssignStmt{
 					Lhs: []ast.Expr{
 						&ast.SelectorExpr{
 							X:   castExpression,
@@ -182,7 +206,7 @@ func (s Struct) Setter(field *types.Var) ast.Decl {
 						},
 					},
 					Tok: token.ASSIGN,
-					Rhs: []ast.Expr{rhs},
+					Rhs: []ast.Expr{secondAssignment},
 				},
 			},
 		},
@@ -207,6 +231,11 @@ func (s Struct) ConstructorName(f Func) string {
 	return strings.Replace(f.Name(), s.Named.Obj().Name(), "", 1)
 }
 
-func ShouldGenerate(f *types.Var) bool {
-	return f.Exported() && !strings.Contains(f.Type().String(), "/vendor/")
+func isStringPointer(t types.Type) bool {
+	if ptr, ok := t.(*types.Pointer); ok {
+		if basic, okB := ptr.Elem().(*types.Basic); okB && basic.Kind() == types.String {
+			return true
+		}
+	}
+	return false
 }

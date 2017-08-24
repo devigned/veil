@@ -22,22 +22,15 @@ func (f Func) Signature() *types.Signature {
 }
 
 func (f Func) IsExportable() bool {
-	for i := 0; i < f.Signature().Params().Len(); i++ {
-		param := f.Signature().Params().At(i)
-		switch param.Type().(type) {
-		case *types.Chan:
+	if !f.Exported() {
+		return false
+	}
+
+	for _, v := range allVars(f.Func) {
+		if !ShouldGenerate(v) {
 			return false
 		}
 	}
-
-	for i := 0; i < f.Signature().Results().Len(); i++ {
-		result := f.Signature().Results().At(i)
-		switch result.Type().(type) {
-		case *types.Chan:
-			return false
-		}
-	}
-
 	return true
 }
 
@@ -67,15 +60,19 @@ func (f Func) ExportName() string {
 	return f.CGoName()
 }
 
+func (f Func) PackagePath() string {
+	return f.Pkg().Path()
+}
+
 func (f Func) CGoName() string {
 	splitNames := strings.Split(f.Name(), ".")
-	pkgName := PkgPathAliasFromString(f.Pkg().Path())
+	pkgName := PkgPathAliasFromString(f.PackagePath())
 	return pkgName + "_" + splitNames[len(splitNames)-1]
 }
 
 func (f Func) AliasedGoName() ast.Expr {
 	splitNames := strings.Split(f.Name(), ".")
-	pkgName := PkgPathAliasFromString(f.Pkg().Path())
+	pkgName := PkgPathAliasFromString(f.PackagePath())
 	return &ast.SelectorExpr{
 		X:   NewIdent(pkgName),
 		Sel: NewIdent(splitNames[len(splitNames)-1]),

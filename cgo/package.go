@@ -11,7 +11,8 @@ import (
 	"os/exec"
 
 	"github.com/devigned/veil/core"
-	"github.com/emirpasic/gods/sets/hashset"
+	"github.com/emirpasic/gods/maps"
+	"github.com/emirpasic/gods/maps/treemap"
 	"github.com/marstr/collection"
 	"go/ast"
 	"strings"
@@ -19,10 +20,10 @@ import (
 
 // Package is a container for ast.Types and Docs
 type Package struct {
-	pkg              *types.Package
-	doc              *doc.Package
-	exportedAstables *hashset.Set
-	packageAliases   map[string]string
+	pkg            *types.Package
+	doc            *doc.Package
+	symbols        *treemap.Map
+	packageAliases *treemap.Map
 }
 
 // NewPackage constructs a Package from pkgPath using the specified working directory
@@ -61,10 +62,10 @@ func NewPackage(pkgPath string, workDir string) (*Package, error) {
 	docPkg := doc.New(astPkg, buildPkg.ImportPath, 0)
 
 	veilPkg := &Package{
-		pkg:              typesPkg,
-		doc:              docPkg,
-		exportedAstables: hashset.New(),
-		packageAliases:   map[string]string{},
+		pkg:            typesPkg,
+		doc:            docPkg,
+		packageAliases: treemap.NewWithStringComparator(),
+		symbols:        treemap.NewWithStringComparator(),
 	}
 
 	if err = veilPkg.build(); err != nil {
@@ -74,33 +75,43 @@ func NewPackage(pkgPath string, workDir string) (*Package, error) {
 	return veilPkg, nil
 }
 
-func (p Package) Funcs() []Func {
-	values := p.exportedAstables.Values()
-	output := []Func{}
-	for _, item := range values {
-		if cast, ok := item.(Func); ok {
-			output = append(output, cast)
-		}
+func (p Package) AstTransformers() []AstTransformer {
+	v := make([]AstTransformer, p.symbols.Size())
+	for idx, item := range p.symbols.Values() {
+		v[idx] = item.(AstTransformer)
 	}
-	return output
+	return v
+}
+
+func (p Package) Funcs() []Func {
+	keysValues := p.symbols.Select(func(key, value interface{}) bool {
+		_, ok := value.(Func)
+		return ok
+	})
+	v := make([]Func, keysValues.Size())
+	for idx, item := range keysValues.Values() {
+		v[idx] = item.(Func)
+	}
+	return v
 }
 
 func (p Package) Structs() []*Struct {
-	values := p.exportedAstables.Values()
-	output := []*Struct{}
-	for _, item := range values {
-		if cast, ok := item.(*Struct); ok {
-			output = append(output, cast)
-		}
+	keysValues := p.symbols.Select(func(key, value interface{}) bool {
+		_, ok := value.(*Struct)
+		return ok
+	})
+	v := make([]*Struct, keysValues.Size())
+	for idx, item := range keysValues.Values() {
+		v[idx] = item.(*Struct)
 	}
-	return output
+	return v
 }
 
 func (p Package) ExportedTypes() []types.Type {
-	values := p.exportedAstables.Values()
+	values := p.AstTransformers()
 	output := make([]types.Type, len(values))
 	for i, item := range values {
-		output[i] = item.(types.Type)
+		output[i] = item.Underlying()
 	}
 	return output
 }
@@ -110,14 +121,6 @@ func (p Package) Name() string {
 }
 
 func (p *Package) build() error {
-	shouldExport := hashset.New()
-	addExport := func(item AstTransformer) {
-		if !shouldExport.Contains(item.ExportName()) {
-			shouldExport.Add(item.ExportName())
-			p.exportedAstables.Add(item)
-		}
-	}
-
 	scope := p.pkg.Scope()
 	exportedObjects := collection.AsEnumerable(scope.Names()).Enumerate(nil).
 		Where(func(name interface{}) bool {
@@ -128,96 +131,108 @@ func (p *Package) build() error {
 		})
 
 	for obj := range exportedObjects {
-		switch obj := obj.(type) {
-		case *types.Func:
-			funcWrapper := Func{obj}
-			if funcWrapper.IsExportable() {
-				p.exportedAstables.Add(funcWrapper)
-				for _, astTransformable := range funcExportedTypes(obj) {
-					addExport(astTransformable)
-				}
-			}
-		case *types.TypeName:
-			named := obj.Type().(*types.Named)
-			switch named.Underlying().(type) {
-			case *types.Struct:
-				structWapper := NewStruct(named)
-				addExport(structWapper)
-				for _, v := range structWapper.Methods() {
-					for _, astTransformable := range funcExportedTypes(v) {
-						addExport(astTransformable)
-					}
-				}
-
-				for i := 0; i < structWapper.Struct().NumFields(); i++ {
-					field := structWapper.Struct().Field(i)
-					if astTransformable, ok := shouldWrapField(field); ok {
-						if slice, ok := field.Type().(*types.Slice); ok {
-							if typ, ok := shouldWrapType(slice.Elem()); ok {
-								addExport(typ)
-							}
-						}
-						addExport(astTransformable)
-					}
-				}
-			default:
-				// return core.NewSystemError("I don't know how to handle type names that aren't structs: ", obj)
-			}
-		}
+		p.addExportedObject(obj)
 	}
 
-	for _, item := range p.exportedAstables.Values() {
-
-		addObjAlias := func(typeName *types.TypeName) {
-			path := typeName.Pkg().Path()
-			alias := PkgPathAliasFromString(path)
-			p.packageAliases[alias] = path
-		}
-
-		var addNamedOrPtr func(typ types.Type)
-		addNamedOrPtr = func(typ types.Type) {
-			if named, ok := typ.(*types.Named); ok {
-				addObjAlias(named.Obj())
-			}
-			if ptr, ok := typ.(*types.Pointer); ok {
-				addNamedOrPtr(ptr.Elem())
-			}
-		}
-
-		t := item.(types.Type)
-		underlying := t.Underlying()
-		switch typ := underlying.(type) {
-		case *types.Named:
-			addObjAlias(typ.Obj())
-		case Slice:
-			addNamedOrPtr(typ.Elem())
-		case Func:
-			params := typ.Signature().Params()
-			for i := 0; i < params.Len(); i++ {
-				param := params.At(i)
-				addNamedOrPtr(param.Type())
-			}
-			results := typ.Signature().Results()
-			for i := 0; i < results.Len(); i++ {
-				result := results.At(i)
-				addNamedOrPtr(result.Type())
-			}
+	for _, aster := range p.AstTransformers() {
+		if item, ok := aster.(Packaged); ok {
+			path := item.PackagePath()
+			p.packageAliases.Put(PkgPathAliasFromString(path), path)
 		}
 	}
 
 	return nil
 }
 
-func (p Package) ImportAliases() map[string]string {
+func (p Package) addExportedObject(obj interface{}) error {
+	addExport := func(item AstTransformer) bool {
+		exportName := item.ExportName()
+		if _, ok := p.symbols.Get(exportName); ok || !item.IsExportable() {
+			// already registered this symbol
+			return false
+		} else {
+			p.symbols.Put(exportName, item)
+			return true
+		}
+	}
+
+	handleNamed := func(named *types.Named) error {
+		switch named.Underlying().(type) {
+		case *types.Struct:
+			structWapper := NewStruct(named)
+			if addExport(structWapper) {
+				for _, method := range structWapper.Methods() {
+					if method.Exported() {
+						for _, v := range allVars(method) {
+							if err := p.addExportedObject(v.Type()); err != nil {
+								return err
+							}
+						}
+					}
+				}
+
+				for i := 0; i < structWapper.Struct().NumFields(); i++ {
+					field := structWapper.Struct().Field(i)
+					if field.Exported() {
+						if err := p.addExportedObject(field.Type()); err != nil {
+							return err
+						}
+					}
+				}
+			}
+		case *types.Map:
+			// Todo: handle maps
+		case *types.Basic:
+			// Todo: should this be handled differently?
+		case *types.Interface:
+			// Todo: probably should handle interfaces
+		default:
+			return core.NewSystemError("I don't know how to handle named types like: ", obj)
+		}
+		return nil
+	}
+
+	switch t := obj.(type) {
+	case *types.Func:
+		funcWrapper := Func{t}
+		if addExport(funcWrapper) {
+			for _, v := range allVars(t) {
+				if err := p.addExportedObject(v.Type()); err != nil {
+					return err
+				}
+			}
+		}
+	case *types.Slice:
+		addExport(NewSlice(t.Elem()))
+		if err := p.addExportedObject(t.Elem()); err != nil {
+			return err
+		}
+	case *types.TypeName:
+		named := t.Type().(*types.Named)
+		if err := handleNamed(named); err != nil {
+			return err
+		}
+	case *types.Named:
+		if err := handleNamed(t); err != nil {
+			return err
+		}
+	case *types.Pointer:
+		if err := p.addExportedObject(t.Elem()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p Package) ImportAliases() maps.Map {
 	return p.packageAliases
 }
 
 func (p Package) ToAst() []ast.Decl {
 	decls := []ast.Decl{}
 
-	for _, t := range p.exportedAstables.Values() {
-		transformer := t.(AstTransformer)
-		for _, d := range transformer.ToAst() {
+	for _, t := range p.AstTransformers() {
+		for _, d := range t.ToAst() {
 			decls = append(decls, d)
 		}
 	}
@@ -236,9 +251,23 @@ func (p Package) IsConstructor(f Func) bool {
 
 func funcExportedTypes(fun *types.Func) []AstTransformer {
 	typs := []AstTransformer{}
-	sig := fun.Type().(*types.Signature)
-	vars := []*types.Var{}
+	for _, v := range allVars(fun) {
+		paramType := v.Type()
+		if slice, ok := paramType.(*types.Slice); ok {
+			if typ, ok := shouldWrapType(slice.Elem()); ok {
+				typs = append(typs, typ)
+			}
+		}
+		if typ, ok := shouldWrapType(paramType); ok {
+			typs = append(typs, typ)
+		}
+	}
+	return typs
+}
 
+func allVars(fun *types.Func) []*types.Var {
+	vars := []*types.Var{}
+	sig := fun.Type().(*types.Signature)
 	params := sig.Params()
 	for i := 0; i < params.Len(); i++ {
 		param := params.At(i)
@@ -251,18 +280,7 @@ func funcExportedTypes(fun *types.Func) []AstTransformer {
 		vars = append(vars, param)
 	}
 
-	for _, v := range vars {
-		paramType := v.Type()
-		if slice, ok := paramType.(*types.Slice); ok {
-			if typ, ok := shouldWrapType(slice.Elem()); ok {
-				typs = append(typs, typ)
-			}
-		}
-		if typ, ok := shouldWrapType(paramType); ok {
-			typs = append(typs, typ)
-		}
-	}
-	return typs
+	return vars
 }
 
 func shouldWrapType(t types.Type) (AstTransformer, bool) {

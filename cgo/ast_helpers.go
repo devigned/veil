@@ -987,9 +987,13 @@ func DeRef(expr ast.Expr) *ast.StarExpr {
 
 // Ref takes an expression and prefaces the expression with a &
 func Ref(expr ast.Expr) ast.Expr {
-	return &ast.UnaryExpr{
-		X:  expr,
-		Op: token.AND,
+	if star, ok := expr.(*ast.StarExpr); ok {
+		return star.X
+	} else {
+		return &ast.UnaryExpr{
+			X:  expr,
+			Op: token.AND,
+		}
 	}
 }
 
@@ -1170,8 +1174,8 @@ func CastExpr(t types.Type, ident ast.Expr) ast.Expr {
 		return castExpr
 	case *types.Slice:
 		slice := NewSlice(t.Elem())
-		goName := slice.GoName()
-		castExpr := DeRef(CastUnsafePtrOfTypeUuid(DeRef(NewIdent(goName)), ident))
+		goTypeExpr := slice.GoTypeExpr()
+		castExpr := DeRef(CastUnsafePtrOfTypeUuid(DeRef(goTypeExpr), ident))
 		return castExpr
 	case *types.Basic:
 		if t.Kind() == types.String {
@@ -1247,7 +1251,7 @@ func TypeToArgumentTypeExpr(t types.Type) ast.Expr {
 // VarToField transforms a Var into an AST field
 func VarToField(p *types.Var, t types.Type) *ast.Field {
 	name := p.Name()
-	typeName := p.Type().String()
+	typeName := t.String()
 	defaultAction := func() *ast.Field {
 		return &ast.Field{
 			Type:  NewIdent(typeName),
@@ -1281,6 +1285,38 @@ func VarToField(p *types.Var, t types.Type) *ast.Field {
 	default:
 		return defaultAction()
 	}
+}
+
+func ShouldGenerateField(v *types.Var) bool {
+	if !v.Exported() {
+		return false
+	}
+	return shouldGenerate(v, v.Type())
+}
+
+func ShouldGenerate(v *types.Var) bool {
+	return shouldGenerate(v, v.Type())
+}
+
+func shouldGenerate(v *types.Var, t types.Type) bool {
+	if strings.Contains(t.String(), "/vendor/") {
+		return false
+	}
+
+	supportedType := true
+	switch typ := t.(type) {
+	case *types.Chan, *types.Map, *types.Signature:
+		supportedType = false
+	case *types.Interface:
+		if !ImplementsError(typ) {
+			supportedType = false
+		}
+	case *types.Pointer:
+		return shouldGenerate(v, typ.Elem())
+	case *types.Named:
+		return shouldGenerate(v, typ.Underlying())
+	}
+	return supportedType
 }
 
 type hasMethods interface {

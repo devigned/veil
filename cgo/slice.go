@@ -46,16 +46,24 @@ func (s Slice) ExportName() string {
 	return s.CGoName()
 }
 
+func (s Slice) IsExportable() bool {
+	return true
+}
+
 func (s Slice) MethodName() string {
 	pkgAlias, name := s.ElementPackageAliasAndPath(nil)
-	if pkgAlias == "" {
+	if pkgAlias != "" {
 		return pkgAlias + "_" + name
 	}
 	return name
 }
 
 func (s Slice) ElementName() string {
-	pkgAlias, name := s.ElementPackageAliasAndPath(nil)
+	return elementName(s.elem)
+}
+
+func elementName(typ types.Type) string {
+	pkgAlias, name := elementPackageAliasAndPath(typ)
 	if pkgAlias == "" {
 		return name
 	} else {
@@ -68,6 +76,10 @@ func (s Slice) ElementPackageAliasAndPath(typ types.Type) (string, string) {
 		typ = s.elem
 	}
 
+	return elementPackageAliasAndPath(typ)
+}
+
+func elementPackageAliasAndPath(typ types.Type) (string, string) {
 	objToString := func(typeName *types.TypeName) (string, string) {
 		return PkgPathAliasFromString(typeName.Pkg().Path()), typeName.Name()
 	}
@@ -78,7 +90,10 @@ func (s Slice) ElementPackageAliasAndPath(typ types.Type) (string, string) {
 		obj := t.Obj()
 		return objToString(obj)
 	case *types.Pointer:
-		return s.ElementPackageAliasAndPath(t.Elem())
+		return elementPackageAliasAndPath(t.Elem())
+	case *types.Slice:
+		alias, name := elementPackageAliasAndPath(t.Elem())
+		return "[]" + alias, name
 	default:
 		return "", t.String()
 	}
@@ -88,11 +103,23 @@ func (s Slice) Elem() types.Type {
 	return s.elem
 }
 
-func (s Slice) GoName() string {
-	if _, ok := s.elem.(*types.Pointer); ok {
-		return "[]*" + s.ElementName()
-	} else {
-		return "[]" + s.ElementName()
+func (s Slice) GoTypeExpr() ast.Expr {
+	typeExpr := &ast.ArrayType{
+		Elt: goTypeExpr(s.elem),
+	}
+	return typeExpr
+}
+
+func goTypeExpr(t types.Type) ast.Expr {
+	switch typ := t.(type) {
+	case *types.Pointer:
+		return DeRef(goTypeExpr(typ.Elem()))
+	case *types.Slice:
+		return &ast.ArrayType{
+			Elt: goTypeExpr(typ.Elem()),
+		}
+	default:
+		return NewIdent(elementName(typ))
 	}
 }
 
@@ -103,23 +130,21 @@ func (s Slice) CGoName() string {
 // NewAst produces the []ast.Decl to construct a slice type and increment it's reference count
 func (s Slice) NewAst() ast.Decl {
 	functionName := s.CGoName() + "_new"
-	goType := &ast.ArrayType{
-		Elt: NewIdent(s.ElementName()),
-	}
+	goType := s.GoTypeExpr()
 	return NewAst(functionName, goType)
 }
 
 // StringAst produces the []ast.Decl to provide a string representation of the slice
 func (s Slice) StringAst() ast.Decl {
 	functionName := s.CGoName() + "_str"
-	goTypeIdent := NewIdent(s.GoName())
+	goTypeIdent := s.GoTypeExpr()
 	return StringAst(functionName, goTypeIdent)
 }
 
 func (s Slice) LenAst() ast.Decl {
 	functionName := s.CGoName() + "_len"
 	selfIdent := NewIdent("self")
-	goTypeIdent := NewIdent(s.GoName())
+	goTypeIdent := s.GoTypeExpr()
 	itemsIdent := NewIdent("items")
 
 	castExpression := CastUnsafePtrOfTypeUuid(DeRef(goTypeIdent), selfIdent)
@@ -158,7 +183,7 @@ func (s Slice) ItemAst() ast.Decl {
 	selfIdent := NewIdent("self")
 	indexIdent := NewIdent("i")
 	indexTypeIdent := NewIdent("int")
-	goTypeIdent := NewIdent(s.GoName())
+	goTypeIdent := s.GoTypeExpr()
 	itemsIdent := NewIdent("items")
 
 	castExpression := CastUnsafePtrOfTypeUuid(DeRef(goTypeIdent), selfIdent)
@@ -217,7 +242,7 @@ func (s Slice) ItemSetAst() ast.Decl {
 	selfIdent := NewIdent("self")
 	indexIdent := NewIdent("i")
 	indexTypeIdent := NewIdent("int")
-	goTypeIdent := NewIdent(s.GoName())
+	goTypeIdent := s.GoTypeExpr()
 	itemsIdent := NewIdent("items")
 	itemIdent := NewIdent("item")
 
@@ -282,7 +307,7 @@ func (s Slice) ItemDeleteAst() ast.Decl {
 	selfIdent := NewIdent("self")
 	indexIdent := NewIdent("i")
 	indexTypeIdent := NewIdent("int")
-	goTypeIdent := NewIdent(s.GoName())
+	goTypeIdent := s.GoTypeExpr()
 	itemsIdent := NewIdent("items")
 
 	castExpression := CastUnsafePtrOfTypeUuid(DeRef(goTypeIdent), selfIdent)
@@ -356,7 +381,7 @@ func (s Slice) ItemInsertAst() ast.Decl {
 	selfIdent := NewIdent("self")
 	indexIdent := NewIdent("i")
 	indexTypeIdent := NewIdent("int")
-	goTypeIdent := NewIdent(s.GoName())
+	goTypeIdent := s.GoTypeExpr()
 	itemsIdent := NewIdent("items")
 	itemIdent := NewIdent("item")
 
@@ -439,7 +464,7 @@ func (s Slice) ItemInsertAst() ast.Decl {
 func (s Slice) ItemAppendAst() ast.Decl {
 	functionName := s.CGoName() + "_item_append"
 	selfIdent := NewIdent("self")
-	goTypeIdent := NewIdent(s.GoName())
+	goTypeIdent := s.GoTypeExpr()
 	itemsIdent := NewIdent("items")
 	itemIdent := NewIdent("item")
 

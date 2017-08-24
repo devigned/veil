@@ -1,6 +1,7 @@
 package cgo
 
 import (
+	"github.com/emirpasic/gods/maps"
 	"github.com/marstr/collection"
 	"go/ast"
 	"go/token"
@@ -31,15 +32,16 @@ func Imports(imports ...string) *ast.GenDecl {
 }
 
 // ImportsFromMap create import ASTs from alias keys and package path values
-func ImportsFromMap(imports map[string]string) ast.Decl {
+func ImportsFromMap(imports maps.Map) ast.Decl {
 	specs := []ast.Spec{}
 
-	for k, v := range imports {
+	for _, k := range imports.Keys() {
+		value, _ := imports.Get(k)
 		spec := &ast.ImportSpec{
-			Name: NewIdent(k),
+			Name: NewIdent(k.(string)),
 			Path: &ast.BasicLit{
 				Kind:  token.STRING,
-				Value: "\"" + v + "\"",
+				Value: "\"" + value.(string) + "\"",
 			},
 		}
 		specs = append(specs, spec)
