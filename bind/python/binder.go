@@ -84,8 +84,8 @@ func (p Binder) NewClass(s *cgo.Struct) *Class {
 	}
 
 	methods := []*PyFunc{}
-	for _, f := range s.Methods() {
-		methods = append(methods, p.ToFunc(cgo.Func{Func: f}))
+	for _, f := range s.ExportedMethods() {
+		methods = append(methods, p.ToFunc(f))
 	}
 
 	return &Class{
@@ -162,19 +162,19 @@ func (p Binder) Funcs() []*PyFunc {
 	return funcs
 }
 
-func (p Binder) ToConstructor(class *cgo.Struct, f cgo.Func) *PyFunc {
+func (p Binder) ToConstructor(class *cgo.Struct, f *cgo.Func) *PyFunc {
 	fun := p.ToGenericFunc(f)
 	fun.Name = core.ToSnake(class.ConstructorName(f))
 	return fun
 }
 
-func (p Binder) ToFunc(f cgo.Func) *PyFunc {
+func (p Binder) ToFunc(f *cgo.Func) *PyFunc {
 	fun := p.ToGenericFunc(f)
 	fun.Name = core.ToSnake(f.Name())
 	return fun
 }
 
-func (p Binder) ToGenericFunc(f cgo.Func) *PyFunc {
+func (p Binder) ToGenericFunc(f *cgo.Func) *PyFunc {
 	pyParams := make([]*Param, f.Signature().Params().Len())
 	for i := 0; i < f.Signature().Params().Len(); i++ {
 		param := f.Signature().Params().At(i)

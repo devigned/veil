@@ -1062,9 +1062,84 @@ func InstanceMethodParams(fields ...*ast.Field) *ast.FieldList {
 
 // FuncAst returns an FuncDecl which wraps the func
 func FuncAst(f *Func) *ast.FuncDecl {
-	fun := f.Func
-	functionName := f.CGoName()
-	sig := fun.Type().(*types.Signature)
+	if f.BoundRecv != nil {
+		return buildBoundMethod(f)
+	} else {
+		return buildUnboundMethod(f)
+	}
+}
+
+func buildBoundMethod(f *Func) *ast.FuncDecl {
+	castSelfIdent := NewIdent("castSelf")
+	functionName := f.CName()
+	sig := f.Signature()
+	args := []*ast.Field{}
+	for i := 0; i < sig.Params().Len(); i++ {
+		param := sig.Params().At(i)
+		typedField := UnsafePtrOrBasic(param, param.Type())
+		typedField.Names = []*ast.Ident{NewIdent(param.Name())}
+		args = append(args, typedField)
+	}
+	params := InstanceMethodParams(args...)
+
+	castExpression := CastUnsafePtrOfTypeUuid(DeRef(f.BoundRecv.CTypeName()), NewIdent("self"))
+
+	selfCastAssign := &ast.AssignStmt{
+		Lhs: []ast.Expr{castSelfIdent},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{castExpression},
+	}
+
+	callArgs := make([]ast.Expr, len(params.List)-1)
+	assignStmts := make([]ast.Stmt, len(params.List)-1)
+	for i := 0; i < len(args); i++ {
+		param := sig.Params().At(i)
+		varIdent := NewIdent(fmt.Sprintf("castArg%d", i+1))
+		assignStmts[i] = &ast.AssignStmt{
+			Lhs: []ast.Expr{varIdent},
+			Tok: token.DEFINE,
+			Rhs: []ast.Expr{CastExpr(param.Type(), NewIdent(param.Name()))},
+		}
+		callArgs[i] = varIdent
+	}
+
+	functionCall := &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   castSelfIdent,
+			Sel: NewIdent(f.Name()),
+		},
+		Args: callArgs,
+	}
+
+	assign, returnStmt, results := buildFuncResults(sig, functionCall)
+	var bodyStmts []ast.Stmt
+	if returnStmt == nil {
+		bodyStmts = append(assignStmts, selfCastAssign, assign)
+	} else {
+		bodyStmts = append(assignStmts, selfCastAssign, assign, returnStmt)
+	}
+
+	funcDecl := &ast.FuncDecl{
+		Doc: &ast.CommentGroup{
+			List: ExportComments(functionName),
+		},
+		Name: NewIdent(functionName),
+		Type: &ast.FuncType{
+			Params: params,
+		},
+		Body: &ast.BlockStmt{List: bodyStmts},
+	}
+
+	if results != nil {
+		funcDecl.Type.Results = results
+	}
+
+	return funcDecl
+}
+
+func buildUnboundMethod(f *Func) *ast.FuncDecl {
+	functionName := f.CName()
+	sig := f.Signature()
 
 	functionCall := &ast.CallExpr{
 		Fun:  f.AliasedGoName(),
@@ -1081,6 +1156,25 @@ func FuncAst(f *Func) *ast.FuncDecl {
 
 	params := Fields(sig.Params())
 
+	assign, returnStmt, results := buildFuncResults(sig, functionCall)
+	if returnStmt == nil {
+		funcDecl.Body.List = append(funcDecl.Body.List, assign)
+	} else {
+		funcDecl.Body.List = append(funcDecl.Body.List, assign, returnStmt)
+	}
+
+	funcDecl.Type = &ast.FuncType{
+		Params: params,
+	}
+
+	if results != nil {
+		funcDecl.Type.Results = results
+	}
+
+	return funcDecl
+}
+
+func buildFuncResults(sig *types.Signature, functionCall ast.Expr) (ast.Stmt, *ast.ReturnStmt, *ast.FieldList) {
 	if sig.Results().Len() > 0 {
 		resultNames := make([]ast.Expr, sig.Results().Len())
 		for i := 0; i < sig.Results().Len(); i++ {
@@ -1093,35 +1187,16 @@ func FuncAst(f *Func) *ast.FuncDecl {
 			Rhs: []ast.Expr{functionCall},
 		}
 
-		funcDecl.Body.List = append(funcDecl.Body.List, assign)
 		resultExprs := make([]ast.Expr, sig.Results().Len())
 		for i := 0; i < sig.Results().Len(); i++ {
 			result := sig.Results().At(i)
 			resultExprs[i] = CastOut(result.Type(), resultNames[i])
 		}
 
-		funcDecl.Body.List = append(funcDecl.Body.List, Return(resultExprs...))
-
-		funcDecl.Type = &ast.FuncType{
-			Params:  params,
-			Results: Fields(sig.Results()),
-		}
+		return assign, Return(resultExprs...), Fields(sig.Results())
 	} else {
-		funcDecl.Body.List = append(funcDecl.Body.List, &ast.ExprStmt{
-			X: functionCall,
-		})
-
-		funcDecl.Type = &ast.FuncType{
-			Params: params,
-		}
+		return &ast.ExprStmt{X: functionCall}, nil, nil
 	}
-
-	return funcDecl
-}
-
-type result struct {
-	Name *ast.Ident
-	Stmt ast.Stmt
 }
 
 func CastOut(t types.Type, name ast.Expr) ast.Expr {

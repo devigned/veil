@@ -15,14 +15,14 @@ var (
 
 // Struct is a helpful facade over types.Named which is intended to only contain a struct
 type Struct struct {
-	*types.Named
+	*Named
 }
 
 func NewStruct(named *types.Named) *Struct {
 	if _, ok := named.Underlying().(*types.Struct); !ok {
 		panic("only structs belong in structs")
 	}
-	return &Struct{named}
+	return &Struct{NewNamed(named)}
 }
 
 // Struct returns the underlying struct
@@ -33,83 +33,12 @@ func (s Struct) Struct() *types.Struct {
 	return s.Named.Underlying().(*types.Struct)
 }
 
-// Methods returns the list of methods decorated on the struct
-func (s Struct) Methods() []*types.Func {
-	var methods []*types.Func
-	for i := 0; i < s.Named.NumMethods(); i++ {
-		meth := s.Named.Method(i)
-		fun := Func{meth}
-		if fun.IsExportable() {
-			methods = append(methods, meth)
-		}
-	}
-	return methods
-}
-
-// Underlying returns the underlying type
-func (s Struct) Underlying() types.Type { return s.Named }
-
-// Underlying returns the string representation of the type (types.Type)
-func (s Struct) String() string { return types.TypeString(s.Named, nil) }
-
-// CGoName returns the fully resolved name to the struct
-func (s Struct) CGoName() string {
-	return PkgPathAliasFromString(s.PackagePath()) + "_" + s.Named.Obj().Name()
-}
-
-// CGoType returns the selector expression for the Struct aliased package and type
-func (s Struct) CGoType() ast.Expr {
-	return CGoType(s.Named)
-}
-
-// CGoType returns the selector expression for the aliased package and type
-func CGoType(n *types.Named) ast.Expr {
-	pkgPathIdent := NewIdent(PkgPathAliasFromString(n.Obj().Pkg().Path()))
-	typeIdent := NewIdent(n.Obj().Name())
-	return &ast.SelectorExpr{
-		X:   pkgPathIdent,
-		Sel: typeIdent,
-	}
-}
-
-func (s Struct) NewMethodName() string {
-	return s.CGoName() + "_new"
-}
-
-func (s Struct) ToStringMethodName() string {
-	return s.CGoName() + "_str"
-}
-
 // ToAst returns the go/ast representation of the CGo wrapper of the Array type
 func (s Struct) ToAst() []ast.Decl {
 	decls := []ast.Decl{s.NewAst(), s.StringAst()}
 	decls = append(decls, s.FieldAccessorsAst()...)
+	decls = append(decls, s.MethodAsts()...)
 	return decls
-}
-
-func (s Struct) ExportName() string {
-	return s.CGoName()
-}
-
-func (s Struct) PackagePath() string {
-	return s.Named.Obj().Pkg().Path()
-}
-
-func (s Struct) IsExportable() bool {
-	// default for structs is to export
-	return true
-}
-
-// NewAst produces the []ast.Decl to construct a slice type and increment it's reference count
-func (s Struct) NewAst() ast.Decl {
-	functionName := s.NewMethodName()
-	return NewAst(functionName, s.CGoType())
-}
-
-// StringAst produces the []ast.Decl to provide a string representation of the slice
-func (s Struct) StringAst() ast.Decl {
-	functionName := s.ToStringMethodName()
-	return StringAst(functionName, s.CGoType())
 }
 
 func (s Struct) FieldAccessorsAst() []ast.Decl {
@@ -129,7 +58,7 @@ func (s Struct) Getter(field *types.Var) ast.Decl {
 	selfIdent := NewIdent("self")
 	localVarIdent := NewIdent("value")
 	fieldIdent := NewIdent(field.Name())
-	castExpression := CastUnsafePtrOfTypeUuid(DeRef(s.CGoType()), selfIdent)
+	castExpression := CastUnsafePtrOfTypeUuid(DeRef(s.CTypeName()), selfIdent)
 
 	assignment := &ast.AssignStmt{
 		Lhs: []ast.Expr{localVarIdent},
@@ -170,7 +99,7 @@ func (s Struct) Setter(field *types.Var) ast.Decl {
 	localVarIdent := NewIdent("value")
 	transformedLocalVarIdent := NewIdent("val")
 	fieldIdent := NewIdent(field.Name())
-	castExpression := CastUnsafePtrOfTypeUuid(DeRef(s.CGoType()), selfIdent)
+	castExpression := CastUnsafePtrOfTypeUuid(DeRef(s.CTypeName()), selfIdent)
 	typedField := UnsafePtrOrBasic(field, field.Type())
 	typedField.Names = []*ast.Ident{localVarIdent}
 	params := InstanceMethodParams(typedField)
@@ -216,19 +145,19 @@ func (s Struct) Setter(field *types.Var) ast.Decl {
 }
 
 func (s Struct) FieldName(field *types.Var) string {
-	return s.CGoName() + "_" + field.Name()
+	return s.CName() + "_" + field.Name()
 }
 
-func (s Struct) IsConstructor(f Func) bool {
+func (s Struct) IsConstructor(f *Func) bool {
 	matches := constructorName.FindStringSubmatch(f.Name())
-	if len(matches) > 1 && strings.HasPrefix(matches[1], s.Named.Obj().Name()) {
+	if len(matches) > 1 && strings.HasPrefix(matches[1], s.Obj().Name()) {
 		return true
 	}
 	return false
 }
 
-func (s Struct) ConstructorName(f Func) string {
-	return strings.Replace(f.Name(), s.Named.Obj().Name(), "", 1)
+func (s Struct) ConstructorName(f *Func) string {
+	return strings.Replace(f.Name(), s.Obj().Name(), "", 1)
 }
 
 func isStringPointer(t types.Type) bool {

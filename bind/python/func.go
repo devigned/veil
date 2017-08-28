@@ -7,7 +7,7 @@ import (
 )
 
 type PyFunc struct {
-	fun     cgo.Func
+	fun     *cgo.Func
 	Name    string
 	Params  []*Param
 	Results []*Param
@@ -25,7 +25,11 @@ func (f PyFunc) InputTransforms() []string {
 }
 
 func (f PyFunc) Call() string {
-	return f.fun.CGoName() + "(" + f.PrintArgs() + ")"
+	if f.fun.BoundRecv == nil {
+		return f.fun.CName() + "(" + f.PrintArgs() + ")"
+	} else {
+		return f.fun.CName() + "(self._uuid_ptr, " + f.PrintArgs() + ")"
+	}
 }
 
 func (f PyFunc) PrintArgs() string {

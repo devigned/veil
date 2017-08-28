@@ -83,14 +83,14 @@ func (p Package) AstTransformers() []AstTransformer {
 	return v
 }
 
-func (p Package) Funcs() []Func {
+func (p Package) Funcs() []*Func {
 	keysValues := p.symbols.Select(func(key, value interface{}) bool {
-		_, ok := value.(Func)
+		_, ok := value.(*Func)
 		return ok
 	})
-	v := make([]Func, keysValues.Size())
+	v := make([]*Func, keysValues.Size())
 	for idx, item := range keysValues.Values() {
-		v[idx] = item.(Func)
+		v[idx] = item.(*Func)
 	}
 	return v
 }
@@ -131,7 +131,9 @@ func (p *Package) build() error {
 		})
 
 	for obj := range exportedObjects {
-		p.addExportedObject(obj)
+		if err := p.addExportedObject(obj); err != nil {
+			return err
+		}
 	}
 
 	for _, aster := range p.AstTransformers() {
@@ -161,12 +163,10 @@ func (p Package) addExportedObject(obj interface{}) error {
 		case *types.Struct:
 			structWapper := NewStruct(named)
 			if addExport(structWapper) {
-				for _, method := range structWapper.Methods() {
-					if method.Exported() {
-						for _, v := range allVars(method) {
-							if err := p.addExportedObject(v.Type()); err != nil {
-								return err
-							}
+				for _, method := range structWapper.ExportedMethods() {
+					for _, v := range allVars(method) {
+						if err := p.addExportedObject(v.Type()); err != nil {
+							return err
 						}
 					}
 				}
@@ -186,6 +186,9 @@ func (p Package) addExportedObject(obj interface{}) error {
 			// Todo: should this be handled differently?
 		case *types.Interface:
 			// Todo: probably should handle interfaces
+		case *types.Slice:
+			namedWrapper := NewNamed(named)
+			addExport(namedWrapper)
 		default:
 			return core.NewSystemError("I don't know how to handle named types like: ", obj)
 		}
@@ -194,9 +197,9 @@ func (p Package) addExportedObject(obj interface{}) error {
 
 	switch t := obj.(type) {
 	case *types.Func:
-		funcWrapper := Func{t}
+		funcWrapper := NewFunc(t)
 		if addExport(funcWrapper) {
-			for _, v := range allVars(t) {
+			for _, v := range allVars(funcWrapper) {
 				if err := p.addExportedObject(v.Type()); err != nil {
 					return err
 				}
@@ -209,8 +212,10 @@ func (p Package) addExportedObject(obj interface{}) error {
 		}
 	case *types.TypeName:
 		named := t.Type().(*types.Named)
-		if err := handleNamed(named); err != nil {
-			return err
+		if t.Exported() {
+			if err := handleNamed(named); err != nil {
+				return err
+			}
 		}
 	case *types.Named:
 		if err := handleNamed(t); err != nil {
@@ -240,7 +245,7 @@ func (p Package) ToAst() []ast.Decl {
 	return decls
 }
 
-func (p Package) IsConstructor(f Func) bool {
+func (p Package) IsConstructor(f *Func) bool {
 	for _, s := range p.Structs() {
 		if s.IsConstructor(f) {
 			return true
@@ -249,23 +254,7 @@ func (p Package) IsConstructor(f Func) bool {
 	return false
 }
 
-func funcExportedTypes(fun *types.Func) []AstTransformer {
-	typs := []AstTransformer{}
-	for _, v := range allVars(fun) {
-		paramType := v.Type()
-		if slice, ok := paramType.(*types.Slice); ok {
-			if typ, ok := shouldWrapType(slice.Elem()); ok {
-				typs = append(typs, typ)
-			}
-		}
-		if typ, ok := shouldWrapType(paramType); ok {
-			typs = append(typs, typ)
-		}
-	}
-	return typs
-}
-
-func allVars(fun *types.Func) []*types.Var {
+func allVars(fun *Func) []*types.Var {
 	vars := []*types.Var{}
 	sig := fun.Type().(*types.Signature)
 	params := sig.Params()

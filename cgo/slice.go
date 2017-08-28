@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
 )
 
 // ArrayWrapper is a wrapper for the
@@ -52,6 +53,7 @@ func (s Slice) IsExportable() bool {
 
 func (s Slice) MethodName() string {
 	pkgAlias, name := s.ElementPackageAliasAndPath(nil)
+	pkgAlias = strings.Replace(pkgAlias, "[]", "slice_of", -1)
 	if pkgAlias != "" {
 		return pkgAlias + "_" + name
 	}
