@@ -9,8 +9,8 @@ import (
 
 const (
 	STRING_OUTPUT_TRANSFORM = "_CffiHelper.c2py_string(%s)"
-	STRING_INPUT_TRANSFORM  = "%s = ffi.new(\"char[]\", %s.encode(\"utf-8\"))"
-	STRUCT_INPUT_TRANSFORM  = "%s = %s.uuid_ptr()"
+	STRING_INPUT_TRANSFORM  = "%s = _CffiHelper.py2c_string(%s)"
+	STRUCT_INPUT_TRANSFORM  = "%s = _CffiHelper.py2c_veil_object(%s)"
 	STRUCT_OUTPUT_TRANSFORM = "%s(%s)"
 )
 
@@ -54,8 +54,8 @@ func (p Param) returnFormat(typ types.Type, varName string) string {
 	}
 }
 
-func (p Param) InputFormat(varName string) string {
-	switch t := p.underlying.Type().(type) {
+func InputFormat(varName string, typ types.Type) string {
+	switch t := typ.(type) {
 	case *types.Basic:
 		if t.Kind() == types.String {
 			return fmt.Sprintf(STRING_INPUT_TRANSFORM, varName, varName)
@@ -68,4 +68,12 @@ func (p Param) InputFormat(varName string) string {
 		}
 	}
 	return ""
+}
+
+func (p Param) InputFormat() string {
+	return InputFormat(p.Name(), p.underlying.Type())
+}
+
+func (p Param) InputFormatForName(name string) string {
+	return InputFormat(name, p.underlying.Type())
 }

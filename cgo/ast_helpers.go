@@ -228,6 +228,8 @@ func UuidToCBytes(uuidExpr ast.Expr) ast.Expr {
 func GetUuidFromPtr() ast.Decl {
 	bytes := NewIdent("bytes")
 	uid := NewIdent("uid")
+	self := NewIdent("self")
+	nilIdent := NewIdent("nil")
 
 	// func cgo_get_uuid_from_ptr(self unsafe.Pointer) uuid.UUID
 	return &ast.FuncDecl{
@@ -237,13 +239,24 @@ func GetUuidFromPtr() ast.Decl {
 			Results: &ast.FieldList{
 				List: []*ast.Field{
 					{
-						Type: uuidType,
+						Type: DeRef(uuidType),
 					},
 				},
 			},
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
+				// if self == nil {
+				&ast.IfStmt{
+					Cond: &ast.BinaryExpr{
+						X:  self,
+						Op: token.EQL,
+						Y:  nilIdent,
+					},
+					Body: &ast.BlockStmt{
+						List: []ast.Stmt{Return(nilIdent)},
+					},
+				},
 				// bytes := C.GoBytes(self, 16)
 				&ast.AssignStmt{
 					Lhs: []ast.Expr{
@@ -286,7 +299,7 @@ func GetUuidFromPtr() ast.Decl {
 					},
 				},
 				// return uid
-				Return(uid),
+				Return(Ref(uid)),
 			},
 		},
 	}
@@ -361,19 +374,19 @@ func DecrementRef() ast.Decl {
 
 	statements := refLockUnlockDefer()
 	statements = append(statements,
-		// uid := cgo_get_uuid_from_ptr(ptr)
+		// uid := *cgo_get_uuid_from_ptr(ptr)
 		&ast.AssignStmt{
 			Lhs: []ast.Expr{
 				uid,
 			},
 			Tok: token.DEFINE,
 			Rhs: []ast.Expr{
-				&ast.CallExpr{
+				DeRef(&ast.CallExpr{
 					Fun: NewIdent(GET_UUID_FROM_PTR_NAME),
 					Args: []ast.Expr{
 						ptr,
 					},
-				},
+				}),
 			},
 		},
 		// cobj, ok := refs.ptrs[uid]
@@ -692,10 +705,28 @@ func GetRef() ast.Decl {
 	uid := NewIdent("uid")
 	cobj := NewIdent("cobj")
 	ok := NewIdent("ok")
+	nilIdent := NewIdent("nil")
 	refs := NewIdent(REFS_VAR_NAME)
-	statements := refLockUnlockDefer()
+	statements := []ast.Stmt{
+		// if uid == nil {
+		&ast.IfStmt{
+			Cond: &ast.BinaryExpr{
+				X:  uid,
+				Op: token.EQL,
+				Y:  nilIdent,
+			},
+			Body: &ast.BlockStmt{
+				List: []ast.Stmt{
+					// return nil
+					Return(nilIdent),
+				},
+			},
+		},
+	}
+	statements = append(statements, refLockUnlockDefer()...)
 	statements = append(statements,
 		&ast.IfStmt{
+			// if cobj, ok := refs.ptrs[*uid]; ok {
 			Init: &ast.AssignStmt{
 				Lhs: []ast.Expr{
 					cobj,
@@ -708,11 +739,12 @@ func GetRef() ast.Decl {
 							X:   refs,
 							Sel: NewIdent("ptrs"),
 						},
-						Index: uid,
+						Index: DeRef(uid),
 					},
 				},
 			},
 			Cond: ok,
+			// return cobj.ptr
 			Body: &ast.BlockStmt{
 				List: []ast.Stmt{
 					Return(&ast.SelectorExpr{
@@ -721,8 +753,10 @@ func GetRef() ast.Decl {
 					}),
 				},
 			},
+			// } else {
 			Else: &ast.BlockStmt{
 				List: []ast.Stmt{
+					// panic("ref untracked object!")
 					&ast.ExprStmt{
 						X: &ast.CallExpr{
 							Fun: NewIdent("panic"),
@@ -744,7 +778,7 @@ func GetRef() ast.Decl {
 				List: []*ast.Field{
 					{
 						Names: []*ast.Ident{uid},
-						Type:  uuidType,
+						Type:  DeRef(uuidType),
 					},
 				},
 			},

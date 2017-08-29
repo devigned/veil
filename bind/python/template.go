@@ -52,6 +52,18 @@ class _CffiHelper(object):
             pystr = pystr.decode('utf-8')
         return pystr
 
+    @staticmethod
+    def py2c_string(s):
+    	if _PY3:
+    		s = s.encode('utf-8')
+    	return ffi.new("char[]", s)
+
+    @staticmethod
+    def py2c_veil_object(vo):
+    	if vo is not None:
+    		return vo.uuid_ptr
+    	else:
+    		return ffi.NULL
 
 class VeilObject(object):
     def __init__(self, uuid_ptr):
@@ -138,7 +150,7 @@ class {{$listType.SliceType}}List(VeilList):
 		return "{{$listType.MethodPrefix}}"
 
 	def __go_type_input_transform__(self, value):
-		{{call $listType.InputFormat "value"}}
+		{{call $listType.InputFormat }}
 		return value
 
 	def __go_type_output_transform__(self, value):
@@ -181,14 +193,20 @@ class {{$class.Name}}(VeilObject):
 		{{range $_, $func := $class.Constructors }}
 		@staticmethod
 		def {{$func.Name}}({{$func.PrintArgs}}):
-			{{ range $_, $inTrx := $func.InputTransforms -}}
-			  {{ $inTrx }}
+			{{ range $_, $param := $func.Params -}}
+			  {{ $param.InputFormat }}
 			{{ end -}}
 			{{$cret}} = _CffiHelper.lib.{{$func.Call -}}
 			{{ range $idx, $result := $func.Results -}}
-				{{if $result.IsError -}}
-					if not VeilError.is_nil(cret.r1):
-						{{ printf "raise VeilError(%s.r%d)" $cret $idx -}}
+				{{if $result.IsError}}
+				{{if gt ($func.ResultsLength) 1}}
+			{{ printf "if not VeilError.is_nil(%s.r%d):" $cret $idx}}
+				{{ printf "raise VeilError(%s.r%d)" $cret $idx -}}
+				{{end}}
+				{{if eq ($func.ResultsLength) 1}}
+			if not VeilError.is_nil({{$cret}}):
+				raise VeilError({{$cret}})
+				{{end}}
 				{{end}}
 			{{ end -}}
 			{{$func.PrintReturns}}
@@ -198,14 +216,20 @@ class {{$class.Name}}(VeilObject):
 		{{if $class.Methods}}# Methods{{end}}
 		{{range $_, $func := $class.Methods }}
 		def {{$func.Name}}(self{{if $func.PrintArgs}}, {{end}}{{$func.PrintArgs}}):
-			{{ range $_, $inTrx := $func.InputTransforms -}}
-			  {{ $inTrx }}
+			{{ range $_, $param := $func.Params -}}
+			  {{ $param.InputFormat }}
 			{{ end -}}
 			{{$cret}} = _CffiHelper.lib.{{$func.Call -}}
 			{{ range $idx, $result := $func.Results -}}
-				{{if $result.IsError }}
-			if not VeilError.is_nil(cret.r1):
+				{{if $result.IsError}}
+				{{if gt ($func.ResultsLength) 1}}
+			{{ printf "if not VeilError.is_nil(%s.r%d):" $cret $idx}}
 				{{ printf "raise VeilError(%s.r%d)" $cret $idx -}}
+				{{end}}
+				{{if eq ($func.ResultsLength) 1}}
+			if not VeilError.is_nil({{$cret}}):
+				raise VeilError({{$cret}})
+				{{end}}
 				{{end}}
 			{{ end -}}
 			{{$func.PrintReturns}}
@@ -221,7 +245,7 @@ class {{$class.Name}}(VeilObject):
 
 		@{{$field.Name}}.setter
 		def {{$field.Name}}(self, value):
-			{{with $format := $field.InputFormat "value"}}{{if $format}}{{$format}}{{end}}{{end}}
+			{{with $format := $field.InputFormatForName "value"}}{{if $format}}{{$format}}{{end}}{{end}}
 			_CffiHelper.lib.{{$class.MethodName $field}}_set(self._uuid_ptr, value)
     {{ end -}}
 

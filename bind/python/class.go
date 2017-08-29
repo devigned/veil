@@ -9,8 +9,8 @@ type Class struct {
 	*cgo.Struct
 	binder       *Binder
 	Fields       []*Param
-	Constructors []*PyFunc
-	Methods      []*PyFunc
+	Constructors []*Func
+	Methods      []*Func
 }
 
 func (c Class) Name() string {

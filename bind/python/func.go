@@ -6,33 +6,32 @@ import (
 	"strings"
 )
 
-type PyFunc struct {
+type Func struct {
 	fun     *cgo.Func
 	Name    string
 	Params  []*Param
 	Results []*Param
 }
 
-func (f PyFunc) InputTransforms() []string {
+func (f Func) InputTransforms() []string {
 	inputTranforms := []string{}
 	for _, param := range f.Params {
-		varName := param.Name()
-		if format := param.InputFormat(varName); format != "" {
+		if format := param.InputFormat(); format != "" {
 			inputTranforms = append(inputTranforms, format)
 		}
 	}
 	return inputTranforms
 }
 
-func (f PyFunc) Call() string {
-	if f.fun.BoundRecv == nil {
+func (f Func) Call() string {
+	if f.IsBound() {
 		return f.fun.CName() + "(" + f.PrintArgs() + ")"
 	} else {
-		return f.fun.CName() + "(self._uuid_ptr, " + f.PrintArgs() + ")"
+		return f.fun.CName() + "(self.uuid_ptr(), " + f.PrintArgs() + ")"
 	}
 }
 
-func (f PyFunc) PrintArgs() string {
+func (f Func) PrintArgs() string {
 	names := make([]string, len(f.Params))
 	for i := 0; i < len(names); i++ {
 		names[i] = f.Params[i].Name()
@@ -40,8 +39,11 @@ func (f PyFunc) PrintArgs() string {
 	return strings.Join(names, ", ")
 }
 
-func (f PyFunc) PrintReturns() string {
+func (f Func) PrintReturns() string {
 	returns := ""
+	//if f.fun.CName() == "github_com_azure_azure_sdk_for_go_storage_Container_Create" {
+	//	fmt.Println("got here")
+	//}
 	if len(f.Results) > 1 {
 		names := []string{}
 		for i := 0; i < len(f.Results); i++ {
@@ -63,4 +65,14 @@ func (f PyFunc) PrintReturns() string {
 	} else {
 		return ""
 	}
+}
+
+// ResultsLength returns the length of the results array
+func (f Func) ResultsLength() int {
+	return len(f.Results)
+}
+
+// IsBound returns true if the function is bound to a named type
+func (f Func) IsBound() bool {
+	return f.fun.BoundRecv == nil
 }

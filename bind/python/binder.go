@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"github.com/devigned/veil/cgo"
 	"github.com/devigned/veil/core"
+	"github.com/emirpasic/gods/sets/hashset"
 	"go/token"
 	"go/types"
 	"log"
@@ -31,7 +32,18 @@ var (
 	sizeTypeReplace = regexp.MustCompile(`__SIZE_TYPE__`)
 	removeFilters   = []*regexp.Regexp{sizeOfRemove, complexRemove}
 	replaceFilters  = map[string]*regexp.Regexp{"size_t": sizeTypeReplace}
+	reserved_words  = hashset.New()
 )
+
+func init() {
+	words := []string{"False", "True", "None", "and", "as", "assert", "break", "class",
+		"continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global",
+		"if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return",
+		"try", "while", "with", "yield"}
+	for _, word := range words {
+		reserved_words.Add(word)
+	}
+}
 
 // Binder contains the data for generating a python 3 binding
 type Binder struct {
@@ -40,8 +52,8 @@ type Binder struct {
 
 type TemplateData struct {
 	CDef           string
-	Funcs          []*PyFunc
-	Constructors   map[string]*PyFunc
+	Funcs          []*Func
+	Constructors   map[string]*Func
 	Classes        []*Class
 	Lists          []*List
 	CffiHelperName string
@@ -62,7 +74,9 @@ func (p Binder) NewList(slice *cgo.Slice) *List {
 	return &List{
 		MethodPrefix: slice.CGoName(),
 		SliceType:    sliceType,
-		InputFormat:  p.NewParam(v).InputFormat,
+		InputFormat: func() string {
+			return InputFormat("value", slice.Elem())
+		},
 		OutputFormat: p.NewParam(v).ReturnFormat,
 	}
 }
@@ -71,21 +85,25 @@ func (p Binder) NewClass(s *cgo.Struct) *Class {
 	fields := []*Param{}
 	for i := 0; i < s.Struct().NumFields(); i++ {
 		field := s.Struct().Field(i)
-		if cgo.ShouldGenerate(field) {
-			fields = append(fields, p.NewParam(s.Struct().Field(i)))
+		param := p.NewParam(s.Struct().Field(i))
+		if cgo.ShouldGenerate(field) && !IsReservedWord(param.Name()) {
+			fields = append(fields, param)
 		}
 	}
 
-	constructors := []*PyFunc{}
+	constructors := []*Func{}
 	for _, f := range p.pkg.Funcs() {
 		if s.IsConstructor(f) {
 			constructors = append(constructors, p.ToConstructor(s, f))
 		}
 	}
 
-	methods := []*PyFunc{}
+	methods := []*Func{}
 	for _, f := range s.ExportedMethods() {
-		methods = append(methods, p.ToFunc(f))
+		fun := p.ToFunc(f)
+		if !IsReservedWord(fun.Name) {
+			methods = append(methods, fun)
+		}
 	}
 
 	return &Class{
@@ -151,9 +169,12 @@ func (p Binder) Classes() []*Class {
 	return classes
 }
 
-func (p Binder) Funcs() []*PyFunc {
-	funcs := []*PyFunc{}
+func (p Binder) Funcs() []*Func {
+	funcs := []*Func{}
 	for _, f := range p.pkg.Funcs() {
+		if IsReservedWord(f.Name()) {
+			continue
+		}
 		if p.pkg.IsConstructor(f) {
 			continue
 		}
@@ -162,19 +183,19 @@ func (p Binder) Funcs() []*PyFunc {
 	return funcs
 }
 
-func (p Binder) ToConstructor(class *cgo.Struct, f *cgo.Func) *PyFunc {
+func (p Binder) ToConstructor(class *cgo.Struct, f *cgo.Func) *Func {
 	fun := p.ToGenericFunc(f)
 	fun.Name = core.ToSnake(class.ConstructorName(f))
 	return fun
 }
 
-func (p Binder) ToFunc(f *cgo.Func) *PyFunc {
+func (p Binder) ToFunc(f *cgo.Func) *Func {
 	fun := p.ToGenericFunc(f)
 	fun.Name = core.ToSnake(f.Name())
 	return fun
 }
 
-func (p Binder) ToGenericFunc(f *cgo.Func) *PyFunc {
+func (p Binder) ToGenericFunc(f *cgo.Func) *Func {
 	pyParams := make([]*Param, f.Signature().Params().Len())
 	for i := 0; i < f.Signature().Params().Len(); i++ {
 		param := f.Signature().Params().At(i)
@@ -186,7 +207,7 @@ func (p Binder) ToGenericFunc(f *cgo.Func) *PyFunc {
 		param := f.Signature().Results().At(i)
 		pyResults[i] = p.NewParam(param)
 	}
-	return &PyFunc{
+	return &Func{
 		fun:     f,
 		Name:    core.ToSnake(f.Name()),
 		Params:  pyParams,
@@ -256,4 +277,8 @@ func Format(path string) {
 	} else {
 		log.Println("To format your Python code run `pip install yapf`")
 	}
+}
+
+func IsReservedWord(word string) bool {
+	return reserved_words.Contains(word)
 }
