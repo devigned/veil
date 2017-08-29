@@ -3,8 +3,10 @@ Veil is a code generator, which exposes Golang packages via a generated C ABI th
 host languages through FFI. Currently, Veil supports Python, but could be used with any FFI 
 implementation.
 
-Veil produces a C ABI from a Golang package by parsing the AST and building a wrapper AST. The CGo
-wrapper AST is written, and used as the basis for FFI binding from the consuming language.
+Veil produces a C ABI from a Golang package by parsing the AST exposed by the Golang package 
+and building a CGo wrapper AST for the exposed functionality in the package. The CGo
+wrapper AST is written to `main.go`, compiled, and used as the basis for FFI binding from the 
+consuming language.
 
 Veil has been built to comply with the Golang specification for Go code consumed via a C bridge 
 (see: https://golang.org/cmd/cgo/#hdr-Passing_pointers). The Veil bridge provides a 16 byte UUID as an
