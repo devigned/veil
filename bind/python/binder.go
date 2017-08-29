@@ -56,6 +56,7 @@ type TemplateData struct {
 	Constructors   map[string]*Func
 	Classes        []*Class
 	Lists          []*List
+	Interfaces     []*Interface
 	CffiHelperName string
 	ReturnVarName  string
 }
@@ -86,7 +87,7 @@ func (p Binder) NewClass(s *cgo.Struct) *Class {
 	for i := 0; i < s.Struct().NumFields(); i++ {
 		field := s.Struct().Field(i)
 		param := p.NewParam(s.Struct().Field(i))
-		if cgo.ShouldGenerate(field) && !IsReservedWord(param.Name()) {
+		if cgo.ShouldGenerateField(field) && !IsReservedWord(param.Name()) {
 			fields = append(fields, param)
 		}
 	}
@@ -115,6 +116,22 @@ func (p Binder) NewClass(s *cgo.Struct) *Class {
 	}
 }
 
+func (p Binder) NewInterface(i *cgo.Interface) *Interface {
+	methods := []*Func{}
+	for _, f := range i.ExportedMethods() {
+		fun := p.ToFunc(f)
+		if !IsReservedWord(fun.Name) {
+			methods = append(methods, fun)
+		}
+	}
+
+	return &Interface{
+		binder:    &p,
+		Interface: i,
+		Methods:   methods,
+	}
+}
+
 // Bind is the Python 3 implementation of Bind
 func (p Binder) Bind(outDir string) error {
 	headerPath := path.Join(outDir, HEADER_FILE_NAME)
@@ -128,6 +145,7 @@ func (p Binder) Bind(outDir string) error {
 		Funcs:          p.Funcs(),
 		Classes:        p.Classes(),
 		Lists:          p.Lists(),
+		Interfaces:     p.Interfaces(),
 		CffiHelperName: CFFI_HELPER_NAME,
 		ReturnVarName:  RETURN_VAR_NAME,
 	}
@@ -167,6 +185,14 @@ func (p Binder) Classes() []*Class {
 		classes[idx] = p.NewClass(s)
 	}
 	return classes
+}
+
+func (p Binder) Interfaces() []*Interface {
+	interfaces := make([]*Interface, len(p.pkg.Structs()))
+	for idx, i := range p.pkg.Interfaces() {
+		interfaces[idx] = p.NewInterface(i)
+	}
+	return interfaces
 }
 
 func (p Binder) Funcs() []*Func {

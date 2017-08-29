@@ -107,6 +107,18 @@ func (p Package) Structs() []*Struct {
 	return v
 }
 
+func (p Package) Interfaces() []*Interface {
+	keysValues := p.symbols.Select(func(key, value interface{}) bool {
+		_, ok := value.(*Interface)
+		return ok
+	})
+	v := make([]*Interface, keysValues.Size())
+	for idx, item := range keysValues.Values() {
+		v[idx] = item.(*Interface)
+	}
+	return v
+}
+
 func (p Package) ExportedTypes() []types.Type {
 	values := p.AstTransformers()
 	output := make([]types.Type, len(values))
@@ -185,10 +197,11 @@ func (p Package) addExportedObject(obj interface{}) error {
 		case *types.Basic:
 			// Todo: should this be handled differently?
 		case *types.Interface:
-			// Todo: probably should handle interfaces
+			if !ImplementsError(named) {
+				addExport(NewInterface(named))
+			}
 		case *types.Slice:
-			namedWrapper := NewNamed(named)
-			addExport(namedWrapper)
+			addExport(NewNamed(named))
 		default:
 			return core.NewSystemError("I don't know how to handle named types like: ", obj)
 		}

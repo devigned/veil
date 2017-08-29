@@ -14,7 +14,7 @@ type Class struct {
 }
 
 func (c Class) Name() string {
-	return c.Struct.Named.Obj().Name()
+	return c.Named.Obj().Name()
 }
 
 func (c Class) MethodName(p *Param) string {

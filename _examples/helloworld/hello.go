@@ -1,6 +1,9 @@
 package helloworld
 
-import "fmt"
+import (
+	"fmt"
+	"io"
+)
 
 var (
 	magicNumber = 0
@@ -61,6 +64,11 @@ func PublicUnboundError(arg1 int) (int, error) {
 // PublicBound returns the meaning of everything
 func (h *Hello) PublicBound(arg1 int) (string, error) {
 	return h.Bar, nil
+}
+
+func (h *Hello) PublicInterface(io io.Reader) (int, error) {
+	bytes := []byte{}
+	return io.Read(bytes)
 }
 
 // NewHello constructs a new instance of Hello
