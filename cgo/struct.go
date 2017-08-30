@@ -1,7 +1,6 @@
 package cgo
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -27,10 +26,7 @@ func NewStruct(named *types.Named) *Struct {
 
 // Struct returns the underlying struct
 func (s Struct) Struct() *types.Struct {
-	if _, ok := s.Named.Underlying().(*types.Struct); !ok {
-		fmt.Println(s.Named)
-	}
-	return s.Named.Underlying().(*types.Struct)
+	return s.Underlying().(*types.Struct)
 }
 
 // ToAst returns the go/ast representation of the CGo wrapper of the Array type
