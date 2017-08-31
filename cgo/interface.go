@@ -47,7 +47,12 @@ func (iface Interface) Interface() *types.Interface {
 
 // ToAst returns the go/ast representation of the CGo wrapper of the named type
 func (iface Interface) ToAst() []ast.Decl {
-	decls := []ast.Decl{iface.HelperStructAst(), iface.NewAst(), iface.StringAst()}
+	decls := []ast.Decl{
+		iface.HelperStructAst(),
+		iface.NewAst(),
+		iface.StringAst(),
+		iface.HelperCallbackRegistrationAst(),
+	}
 	// decls = append(decls, iface.MethodAsts()...)
 	return decls
 }
@@ -238,6 +243,76 @@ func (iface Interface) HelperStructAst() ast.Decl {
 			},
 		},
 	}
+}
+
+func (iface Interface) HelperCallbackRegistrationAst() ast.Decl {
+	funcName := iface.CName() + "_register_callback"
+	selfIdent := NewIdent("self")
+	helperIdent := NewIdent("helper")
+	methodNameIdent := NewIdent("methodName")
+	funcPtrIdent := NewIdent("funcPtr")
+	strIdent := NewIdent("strMethodName")
+
+	castExpression := CastUnsafePtrOfTypeUuid(DeRef(iface.helperStructName()), selfIdent)
+
+	selfCastAssign := &ast.AssignStmt{
+		Lhs: []ast.Expr{helperIdent},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{castExpression},
+	}
+
+	//func veil_reader_helper_register_callback(self unsafe.Pointer, methodName *C.char, cfn unsafe.Pointer) {
+	funcDecl := &ast.FuncDecl{
+		Doc: &ast.CommentGroup{
+			List: ExportComments(funcName),
+		},
+		Name: NewIdent(funcName),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{
+				List: []*ast.Field{
+					{
+						Names: []*ast.Ident{selfIdent},
+						Type:  unsafePointer,
+					},
+					{
+						Names: []*ast.Ident{methodNameIdent},
+						Type:  charStarType,
+					},
+					{
+						Names: []*ast.Ident{funcPtrIdent},
+						Type:  unsafePointer,
+					},
+				},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				// helper := (*readerHelper)(cgo_get_ref(cgo_get_uuid_from_ptr(self)))
+				selfCastAssign,
+				// strMethodName := C.GoString(methodName)
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{strIdent},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{ToGoString(methodNameIdent)},
+				},
+				// helper.callbacks[str] = cfn
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{
+						&ast.IndexExpr{
+							X: &ast.SelectorExpr{
+								X:   helperIdent,
+								Sel: NewIdent("callbacks"),
+							},
+							Index: strIdent,
+						},
+					},
+					Tok: token.ASSIGN,
+					Rhs: []ast.Expr{funcPtrIdent},
+				},
+			},
+		},
+	}
+	return funcDecl
 }
 
 func (iface Interface) helperStructName() *ast.Ident {
