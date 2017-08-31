@@ -67,7 +67,8 @@ func (n Named) ToStringMethodName() string {
 // Methods returns the list of methods decorated on the named type
 func (n Named) ExportedMethods() []*Func {
 	var methods []*Func
-	for i := 0; i < n.NumMethods(); i++ {
+	numMethods := n.NumMethods()
+	for i := 0; i < numMethods; i++ {
 		meth := n.Method(i)
 		fun := NewBoundFunc(meth, &n)
 		if fun.IsExportable() {

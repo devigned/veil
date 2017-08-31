@@ -74,8 +74,9 @@ func buildSharedLib(outDir string) error {
 // toCodeFile generates a CGo wrapper around the pkg
 func toCodeFile(pkg *cgo.Package) *ast.File {
 	cImport := cgo.Imports("C")
+
 	cImport.Doc = &ast.CommentGroup{
-		List: cgo.IncludeComments("<stdlib.h>"),
+		List: append(cgo.IncludeComments("<stdlib.h>"), cgo.RawComments(pkg.CDefinitions()...)...),
 	}
 
 	declarations := []ast.Decl{

@@ -13,6 +13,7 @@ import (
 	"github.com/devigned/veil/core"
 	"github.com/emirpasic/gods/maps"
 	"github.com/emirpasic/gods/maps/treemap"
+	"github.com/emirpasic/gods/sets/treeset"
 	"github.com/marstr/collection"
 	"go/ast"
 	"strings"
@@ -256,6 +257,37 @@ func (p Package) ToAst() []ast.Decl {
 	}
 
 	return decls
+}
+
+func (p Package) CDefinitions() []string {
+	retTypes := []string{}
+	funcPtrs := []string{}
+	calls := []string{}
+	for _, iface := range p.Interfaces() {
+		r, f, c := iface.CDefs()
+		retTypes = append(retTypes, r...)
+		funcPtrs = append(funcPtrs, f...)
+		calls = append(calls, c...)
+	}
+	retTypes = uniqStrings(retTypes...)
+	funcPtrs = uniqStrings(funcPtrs...)
+	calls = uniqStrings(calls...)
+	return append(append(retTypes, funcPtrs...), calls...)
+}
+
+func uniqStrings(items ...string) []string {
+	set := treeset.NewWithStringComparator()
+
+	for _, item := range items {
+		set.Add(item)
+	}
+
+	slice := make([]string, set.Size())
+	for idx, def := range set.Values() {
+		slice[idx] = def.(string)
+	}
+
+	return slice
 }
 
 func (p Package) IsConstructor(f *Func) bool {

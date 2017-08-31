@@ -251,6 +251,8 @@ class {{$class.Name}}(VeilObject):
 
 {{end}}
 
+
+
 `
 )
 

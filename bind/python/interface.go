@@ -2,6 +2,7 @@ package python
 
 import (
 	"github.com/devigned/veil/cgo"
+	"go/ast"
 )
 
 type Interface struct {
@@ -10,10 +11,12 @@ type Interface struct {
 	Methods []*Func
 }
 
-func (i Interface) Name() string {
-	return i.Named.Obj().Name()
+func (iface Interface) Name() string {
+	return iface.Obj().Name()
 }
 
-func (i Interface) NewMethodName() string {
-	return i.NewMethodName()
+// ToAst returns the go/ast representation of the CGo wrapper of the named type
+func (iface Interface) ToAst() []ast.Decl {
+	decls := []ast.Decl{}
+	return decls
 }

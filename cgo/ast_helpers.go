@@ -117,11 +117,20 @@ func RefsStruct() ast.Decl {
 
 // NewAst produces the []ast.Decl to construct a slice type and increment it's reference count
 func NewAst(functionName string, goType ast.Expr) ast.Decl {
+	emptyBody := func(id *ast.Ident) []ast.Stmt { return []ast.Stmt{} }
+	return NewAstWithInitialization(functionName, goType, []*ast.Field{}, emptyBody)
+}
+
+func NewAstWithInitialization(functionName string, goType ast.Expr, params []*ast.Field, inits func(*ast.Ident) []ast.Stmt) ast.Decl {
 	localVarIdent := NewIdent("o")
 	target := &ast.UnaryExpr{
 		Op: token.AND,
 		X:  localVarIdent,
 	}
+
+	body := []ast.Stmt{DeclareVar(localVarIdent, goType)}
+	body = append(body, inits(localVarIdent)...)
+	body = append(body, Return(UuidToCBytes(IncrementRefCall(target))))
 
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
@@ -129,6 +138,9 @@ func NewAst(functionName string, goType ast.Expr) ast.Decl {
 		},
 		Name: NewIdent(functionName),
 		Type: &ast.FuncType{
+			Params: &ast.FieldList{
+				List: params,
+			},
 			Results: &ast.FieldList{
 				List: []*ast.Field{
 					{Type: unsafePointer},
@@ -136,10 +148,7 @@ func NewAst(functionName string, goType ast.Expr) ast.Decl {
 			},
 		},
 		Body: &ast.BlockStmt{
-			List: []ast.Stmt{
-				DeclareVar(localVarIdent, goType),
-				Return(UuidToCBytes(IncrementRefCall(target))),
-			},
+			List: body,
 		},
 	}
 
@@ -1079,6 +1088,17 @@ func IncludeComments(includeNames ...string) []*ast.Comment {
 	return comments
 }
 
+func RawComments(strs ...string) []*ast.Comment {
+	comments := make([]*ast.Comment, len(strs))
+	for i := 0; i < len(comments); i++ {
+		comments[i] = &ast.Comment{
+			Text:  strs[i],
+			Slash: token.Pos(1),
+		}
+	}
+	return comments
+}
+
 // InstanceMethodParams returns a constructed field list for an instance method
 func InstanceMethodParams(fields ...*ast.Field) *ast.FieldList {
 	tmpFields := []*ast.Field{
@@ -1416,10 +1436,6 @@ func shouldGenerate(v *types.Var, t types.Type) bool {
 	switch typ := t.(type) {
 	case *types.Chan, *types.Map, *types.Signature:
 		supportedType = false
-	case *types.Interface:
-		if !ImplementsError(typ) {
-			supportedType = false
-		}
 	case *types.Pointer:
 		return shouldGenerate(v, typ.Elem())
 	case *types.Named:
@@ -1502,7 +1518,7 @@ func NamedToField(p *types.Var, named *types.Named) *ast.Field {
 // PkgPathAliasFromString takes a golang path as a string and returns an import alias for that path
 func PkgPathAliasFromString(path string) string {
 	splits := strings.FieldsFunc(path, splitPkgPath)
-	return strings.Join(splits, "_")
+	return strings.Join(append([]string{"veil"}, splits...), "_")
 }
 
 func splitPkgPath(r rune) bool {

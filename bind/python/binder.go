@@ -188,7 +188,7 @@ func (p Binder) Classes() []*Class {
 }
 
 func (p Binder) Interfaces() []*Interface {
-	interfaces := make([]*Interface, len(p.pkg.Structs()))
+	interfaces := make([]*Interface, len(p.pkg.Interfaces()))
 	for idx, i := range p.pkg.Interfaces() {
 		interfaces[idx] = p.NewInterface(i)
 	}
