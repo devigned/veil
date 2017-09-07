@@ -68,6 +68,7 @@ func (h *Hello) PublicBound(arg1 int) (string, error) {
 
 func (h *Hello) PublicInterface(io io.Reader) (int, error) {
 	bytes := []byte{}
+	fmt.Printf("%v", io)
 	return io.Read(bytes)
 }
 

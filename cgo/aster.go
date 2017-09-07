@@ -11,8 +11,9 @@ type AstTransformer interface {
 	Exportable
 }
 
-type Packaged interface {
-	PackagePath() string
+type Aliased interface {
+	Alias() string
+	Path() string
 }
 
 type Exportable interface {

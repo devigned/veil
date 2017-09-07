@@ -1292,15 +1292,21 @@ func CastExpr(t types.Type, ident ast.Expr) ast.Expr {
 	case *types.Pointer:
 		return Ref(CastExpr(t.Elem(), ident))
 	case *types.Named:
-		pkg := t.Obj().Pkg()
-		typeName := t.Obj().Name()
-		castExpr := DeRef(CastUnsafePtrOfTypeUuid(
-			DeRef(&ast.SelectorExpr{
-				X:   NewIdent(PkgPathAliasFromString(pkg.Path())),
-				Sel: NewIdent(typeName),
-			}),
-			ident))
-		return castExpr
+		path := PkgPathAliasFromString(t.Obj().Pkg().Path())
+		if _, ok := t.Underlying().(*types.Interface); ok {
+			typ := NewIdent(path + "_" + t.Obj().Name() + "_helper")
+			castExpr := DeRef(CastUnsafePtrOfTypeUuid(DeRef(typ), ident))
+			return castExpr
+		} else {
+			typeName := t.Obj().Name()
+			castExpr := DeRef(CastUnsafePtrOfTypeUuid(
+				DeRef(&ast.SelectorExpr{
+					X:   NewIdent(path),
+					Sel: NewIdent(typeName),
+				}),
+				ident))
+			return castExpr
+		}
 	case *types.Slice:
 		slice := NewSlice(t.Elem())
 		goTypeExpr := slice.GoTypeExpr()
@@ -1347,14 +1353,14 @@ func UnsafePtrOrBasic(p *types.Var, t types.Type) *ast.Field {
 	switch typ := t.(type) {
 	case *types.Basic:
 		return VarToField(p, t)
-	//case *types.Named, *types.Interface:
-	//	if ImplementsError(t) {
-	//		return &ast.Field{
-	//			Type: NewIdent("error"),
-	//		}
-	//	} else {
-	//		return returnDefault()
-	//	}
+		//case *types.Named, *types.Interface:
+		//	if ImplementsError(t) {
+		//		return &ast.Field{
+		//			Type: NewIdent("error"),
+		//		}
+		//	} else {
+		//		return returnDefault()
+		//	}
 	case *types.Pointer:
 		if basic, ok := typ.Elem().(*types.Basic); ok {
 			return VarToField(p, basic)
@@ -1523,4 +1529,47 @@ func PkgPathAliasFromString(path string) string {
 
 func splitPkgPath(r rune) bool {
 	return r == '.' || r == '/' || r == '-'
+}
+
+func TypeExpression(typ types.Type) ast.Expr {
+	objToString := func(typeName *types.TypeName) ast.Expr {
+		if typeName.Pkg() == nil {
+			return NewIdent(typeName.Name())
+		} else {
+			return &ast.SelectorExpr{
+				X:   NewIdent(PkgPathAliasFromString(typeName.Pkg().Path())),
+				Sel: NewIdent(typeName.Name()),
+			}
+		}
+	}
+	switch t := typ.(type) {
+	case *types.Basic:
+		return NewIdent(t.Name())
+	case *types.Named:
+		obj := t.Obj()
+		return objToString(obj)
+	case *types.Pointer:
+		return TypeExpression(t.Elem())
+	case *types.Slice:
+		return &ast.ArrayType{
+			Elt: TypeExpression(t.Elem()),
+		}
+	default:
+		return NewIdent(t.String())
+	}
+}
+
+func TypeExpressionToString(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.SelectorExpr:
+		return TypeExpressionToString(t.X) + "." + TypeExpressionToString(t.Sel)
+	case *ast.Ident:
+		return t.Name
+	case *ast.ArrayType:
+		return "[]" + TypeExpressionToString(t.Elt)
+	case *ast.MapType:
+		return "map[" + TypeExpressionToString(t.Key) + "]" + TypeExpressionToString(t.Value)
+	default:
+		panic(fmt.Sprintf("Don't know how to transform %v to string", expr))
+	}
 }

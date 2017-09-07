@@ -150,9 +150,8 @@ func (p *Package) build() error {
 	}
 
 	for _, aster := range p.AstTransformers() {
-		if item, ok := aster.(Packaged); ok {
-			path := item.PackagePath()
-			p.packageAliases.Put(PkgPathAliasFromString(path), path)
+		if item, ok := aster.(Aliased); ok {
+			p.packageAliases.Put(item.Alias(), item.Path())
 		}
 	}
 
@@ -199,7 +198,16 @@ func (p Package) addExportedObject(obj interface{}) error {
 			// Todo: should this be handled differently?
 		case *types.Interface:
 			if !ImplementsError(named) {
-				addExport(NewInterface(named))
+				iface := NewInterface(named)
+				if addExport(iface) {
+					for _, method := range iface.ExportedMethods() {
+						for _, v := range allVars(method) {
+							if err := p.addExportedObject(v.Type()); err != nil {
+								return err
+							}
+						}
+					}
+				}
 			}
 		case *types.Slice:
 			addExport(NewNamed(named))

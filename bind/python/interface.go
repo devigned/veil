@@ -12,7 +12,11 @@ type Interface struct {
 }
 
 func (iface Interface) Name() string {
-	return iface.Obj().Name()
+	return iface.Interface.Name()
+}
+
+func (iface Interface) CName() string {
+	return iface.Interface.CName()
 }
 
 // ToAst returns the go/ast representation of the CGo wrapper of the named type

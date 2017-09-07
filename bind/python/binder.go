@@ -69,7 +69,7 @@ func NewBinder(pkg *cgo.Package) core.Bindable {
 }
 
 func (p Binder) NewList(slice *cgo.Slice) *List {
-	_, name := slice.ElementPackageAliasAndPath(nil)
+	name := slice.ElementPackageAliasAndPath(nil)
 	sliceType := core.ToCap(name)
 	v := types.NewVar(token.Pos(0), nil, "value", slice.Elem())
 	return &List{
@@ -78,7 +78,7 @@ func (p Binder) NewList(slice *cgo.Slice) *List {
 		InputFormat: func() string {
 			return InputFormat("value", slice.Elem())
 		},
-		OutputFormat: p.NewParam(v).ReturnFormat,
+		OutputFormat: p.NewParam(v).ReturnFormatWithName,
 	}
 }
 

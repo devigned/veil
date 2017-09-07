@@ -61,7 +61,7 @@ class _CffiHelper(object):
     @staticmethod
     def py2c_veil_object(vo):
     	if vo is not None:
-    		return vo.uuid_ptr
+    		return vo.uuid_ptr()
     	else:
     		return ffi.NULL
 
@@ -241,17 +241,50 @@ class {{$class.Name}}(VeilObject):
 		@property
 		def {{$field.Name}}(self):
 			cret = _CffiHelper.lib.{{$class.MethodName $field}}_get(self._uuid_ptr)
-			return {{$field.ReturnFormat "cret"}}
+			return {{$field.ReturnFormatWithName "cret"}}
 
 		@{{$field.Name}}.setter
 		def {{$field.Name}}(self, value):
-			{{with $format := $field.InputFormatForName "value"}}{{if $format}}{{$format}}{{end}}{{end}}
+			{{with $format := $field.InputFormatWithName "value"}}{{if $format}}{{$format}}{{end}}{{end}}
 			_CffiHelper.lib.{{$class.MethodName $field}}_set(self._uuid_ptr, value)
     {{ end -}}
 
 {{end}}
 
+{{range $_, $iface := .Interfaces}}
+{{range $_, $func := $iface.Methods }}
+@ffi.callback("void*(void*, void*)")
+def _internal_{{$func.Name}}({{$func.PrintArgs}}, userdata):
+	obj = ffi.from_handle(userdata)
+	{{ range $_, $param := $func.Params -}}
+	  {{ printf "%s = %s" $param.Name $param.ReturnFormat }}
+	{{ end -}}
+	{{$cret}} = obj.{{$func.Name}}({{$func.PrintArgs}})
+{{end -}}
+class {{$iface.Name}}(VeilObject):
+		def __init__(self, uuid_ptr=None):
+			if uuid_ptr is None:
+				self._handle = ffi.new_handle(self)
+				uuid_ptr = self.__get_method__("new")(self._handle)
+			super(Reader, self).__init__(uuid_ptr)
+			{{range $_, $func := $iface.Methods }}
+			self.__get_method__("register_callback")(self.uuid_ptr(), _CffiHelper.py2c_string("{{$func.RegistrationName}}"), _internal_{{$func.Name}})
+			{{end}}
 
+		def __go_type__(self):
+			return "{{$iface.CName}}"
+
+		def __get_method__(self, method_name):
+			return getattr(_CffiHelper.lib, self.__go_type__() + "_" + method_name)
+
+
+		{{range $_, $func := $iface.Methods }}
+		@abstractmethod
+		def {{$func.Name}}(self, {{$func.PrintArgs}}):
+			pass
+
+		{{end -}}
+{{end}}
 
 `
 )

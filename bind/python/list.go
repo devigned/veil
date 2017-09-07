@@ -6,3 +6,7 @@ type List struct {
 	InputFormat  func() string
 	OutputFormat func(string) string
 }
+
+func (l List) ListTypeName() string {
+	return l.SliceType + "List"
+}
