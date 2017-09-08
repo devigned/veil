@@ -97,22 +97,23 @@ func (f Func) CDefs() (retTypes string, funcPtrs string, calls string) {
 	resLen := sig.Results().Len()
 	paramLen := sig.Params().Len() + 1
 	if resLen > 1 {
-		//struct ReturnType_2 { void* r0; void* r1; };
+		//typedef struct ReturnType_2 { void* r0; void* r1; } ReturnType_2;
 		//typedef ReturnType_2 FuncPtr_2_2(void *bytes, void *handle);
 		//inline ReturnType_2 CallHandleFunc_2_2(void *bytes, void *handle, FuncPtr_2_2 *fn) { return fn(bytes, handle); }
 		returnTypeDefName := fmt.Sprintf(""+"ReturnType_%d", resLen)
-		returnTypeDef := fmt.Sprintf("//struct %s {%s;};",
+		returnTypeDef := fmt.Sprintf("//typedef struct %s {%s;} %s;",
 			returnTypeDefName,
-			strings.Join(voidPtrs("r", resLen), "; "))
+			strings.Join(voidPtrs("r", resLen), "; "),
+			returnTypeDefName)
 
 		funcArgs := strings.Join(voidPtrs("arg", paramLen), ", ")
 		funcPtrDefName := f.CallbackFuncPtrName()
-		funcPtrDef := fmt.Sprintf("//typedef struct %s %s(%s);",
+		funcPtrDef := fmt.Sprintf("//typedef struct %s* %s(%s);",
 			returnTypeDefName,
 			funcPtrDefName,
 			funcArgs)
 
-		callHandleFuncDef := fmt.Sprintf("//inline struct %s %s(%s, %s *fn){ return fn(%s); }",
+		callHandleFuncDef := fmt.Sprintf("//inline struct %s* %s(%s, %s *fn){ return fn(%s); }",
 			returnTypeDefName,
 			f.CallbackFuncName(),
 			funcArgs,
@@ -284,20 +285,6 @@ func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 		}
 	}
 
-	//func (r readerHelper) Read(bytes []byte) (int, error) {
-	//	fun, ok := r.callbacks["read"]
-	//	if !ok {
-	//		fmt.Println("didn't find read method!!")
-	//		return 0, nil
-	//	} else {
-	//		fmt.Println("read callback ptr: ", fun)
-	//
-	//		r0 := C.Call_HandleFunc(C.CBytes(cgo_incref(unsafe.Pointer(&bytes)).Bytes()), r.handle, fun)
-	//		fmt.Println(r0)
-	//		return 42, nil
-	//	}
-	//}
-
 	callArgs := make([]ast.Expr, len(params)+2)
 	for i := 0; i < len(params); i++ {
 		p := sig.Params().At(i)
@@ -317,17 +304,120 @@ func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 		Args: []ast.Expr{funIdent},
 	}
 
-	resultStmts := make([]ast.Expr, len(results))
-	for i := 0; i < len(results); i++ {
-		var expr ast.Expr = CastUnsafePtr(DeRef(results[i].Type), &ast.SelectorExpr{
-			X:   resIdent,
-			Sel: NewIdent(fmt.Sprintf("r%d", i)),
-		})
-		if _, ok := results[i].Type.(*ast.StarExpr); !ok {
-			expr = DeRef(expr)
+	resultHandlers := []ast.Stmt{}
+	for idx, res := range results {
+		resIdxIdent := NewIdent(fmt.Sprintf("r%d", idx))
+		// define result variable
+		decl := &ast.DeclStmt{
+			Decl: &ast.GenDecl{
+				Tok: token.VAR,
+				Specs: []ast.Spec{
+					&ast.TypeSpec{
+						Name: resIdxIdent,
+						Type: res.Type,
+					},
+				},
+			},
 		}
-		resultStmts[i] = expr
+
+		var elseExpr ast.Expr = CastUnsafePtr(DeRef(results[idx].Type), &ast.SelectorExpr{
+			X:   resIdent,
+			Sel: resIdxIdent,
+		})
+		if _, ok := results[idx].Type.(*ast.StarExpr); !ok {
+			elseExpr = DeRef(elseExpr)
+		}
+
+		var trueBody []ast.Stmt
+		if isTypeNilable(sig.Results().At(idx).Type()) {
+			trueBody = []ast.Stmt{
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{resIdxIdent},
+					Tok: token.ASSIGN,
+					Rhs: []ast.Expr{NewIdent("nil")},
+				},
+			}
+		} else {
+			trueBody = []ast.Stmt{
+				&ast.ExprStmt{
+					X: Panic(fmt.Sprintf("result: %d is nil and must have a value", idx)),
+				},
+			}
+		}
+
+		ifStmt := &ast.IfStmt{
+			Cond: &ast.BinaryExpr{
+				X: &ast.BinaryExpr{
+					X: &ast.SelectorExpr{
+						X:   resIdent,
+						Sel: resIdxIdent,
+					},
+					Op: token.EQL,
+					Y:  NewIdent("nil"),
+				},
+				Op: token.LOR,
+				Y: &ast.BinaryExpr{
+					X: &ast.SelectorExpr{
+						X:   resIdent,
+						Sel: resIdxIdent,
+					},
+					Op: token.EQL,
+					Y:  &ast.CallExpr{
+						Fun: unsafePointer,
+						Args: []ast.Expr{
+							&ast.CallExpr{
+								Fun: NewIdent("uintptr"),
+								Args: []ast.Expr{
+									&ast.BasicLit{
+										Value: "0x4000000000000",
+										Kind:  token.INT,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			Body: &ast.BlockStmt{
+				List: trueBody,
+			},
+			Else: &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.AssignStmt{
+						Lhs: []ast.Expr{resIdxIdent},
+						Tok: token.ASSIGN,
+						Rhs: []ast.Expr{elseExpr},
+					},
+				},
+			},
+		}
+
+		resultHandlers = append(resultHandlers, decl, ifStmt)
 	}
+
+	resultExprs := make([]ast.Expr, len(results))
+	for i := 0; i < len(results); i++ {
+		resultExprs[i] = NewIdent(fmt.Sprintf("r%d", i))
+	}
+
+	ifStmtBody := []ast.Stmt{
+		&ast.AssignStmt{
+			Lhs: []ast.Expr{resIdent},
+			Tok: token.DEFINE,
+			Rhs: []ast.Expr{
+				&ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   NewIdent("C"),
+						Sel: NewIdent(f.CallbackFuncName()),
+					},
+					Args: callArgs,
+				},
+			},
+		},
+	}
+
+	ifStmtBody = append(ifStmtBody, resultHandlers...)
+	ifStmtBody = append(ifStmtBody, Return(resultExprs...))
 
 	body := []ast.Stmt{
 		// fun, ok := r.callbacks["read"]
@@ -343,22 +433,7 @@ func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 			// if ok {
 			Cond: okIdent,
 			Body: &ast.BlockStmt{
-				List: []ast.Stmt{
-					&ast.AssignStmt{
-						Lhs: []ast.Expr{resIdent},
-						Tok: token.DEFINE,
-						Rhs: []ast.Expr{
-							&ast.CallExpr{
-								Fun: &ast.SelectorExpr{
-									X:   NewIdent("C"),
-									Sel: NewIdent(f.CallbackFuncName()),
-								},
-								Args: callArgs,
-							},
-						},
-					},
-					Return(resultStmts...),
-				},
+				List: ifStmtBody,
 			},
 			// } else {
 			Else: &ast.BlockStmt{
@@ -403,6 +478,34 @@ func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 		},
 	}
 	return funcDecl
+}
+
+func isTypeNilable(t types.Type) bool {
+	nilable := func(typ types.Type) bool {
+		switch typ.(type) {
+		case *types.Pointer, *types.Interface:
+			return true
+		default:
+			return false
+		}
+	}
+
+	nilableType := t
+	if nilable(nilableType) {
+		return true
+	}
+
+	parentEqUnderlying := nilableType == nilableType.Underlying()
+	for !parentEqUnderlying {
+		underlying := nilableType.Underlying()
+		if nilable(underlying) {
+			return true
+		}
+		nilableType = underlying
+		parentEqUnderlying = nilableType == nilableType.Underlying()
+	}
+
+	return false
 }
 
 func (iface Interface) HelperStructAst() ast.Decl {

@@ -48,6 +48,18 @@ var (
 	})
 )
 
+func Panic(message string) ast.Expr {
+	return &ast.CallExpr{
+		Fun: NewIdent("panic"),
+		Args: []ast.Expr{
+			&ast.BasicLit{
+				Kind:  token.STRING,
+				Value: "\"" + message + "\"",
+			},
+		},
+	}
+}
+
 // CObjectStruct produces an AST struct which will represent a C exposed Object
 func CObjectStruct() ast.Decl {
 	return &ast.GenDecl{

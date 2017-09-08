@@ -23,14 +23,16 @@ const (
 )
 
 var (
-	startCGoDefine  = regexp.MustCompile(`^typedef`)
+	startCGoDefine  = regexp.MustCompile(`^typedef|^struct`)
 	sizeOfRemove    = regexp.MustCompile(`_check_for_64_bit_pointer_matching_GoInt`)
 	complexRemove   = regexp.MustCompile(`_Complex`)
 	endif           = regexp.MustCompile(`^#endif`)
+	pounds          = regexp.MustCompile(`^#line|#ifndef|^#define|^#ifdef`)
+	inline          = regexp.MustCompile(`^inline`)
 	endOfCGoDefine  = regexp.MustCompile(`^#ifdef __cplusplus`)
 	extern          = regexp.MustCompile(`^extern \w`)
 	sizeTypeReplace = regexp.MustCompile(`__SIZE_TYPE__`)
-	removeFilters   = []*regexp.Regexp{sizeOfRemove, complexRemove}
+	removeFilters   = []*regexp.Regexp{sizeOfRemove, complexRemove, pounds, inline}
 	replaceFilters  = map[string]*regexp.Regexp{"size_t": sizeTypeReplace}
 	reserved_words  = hashset.New()
 )

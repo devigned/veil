@@ -67,8 +67,7 @@ func (h *Hello) PublicBound(arg1 int) (string, error) {
 }
 
 func (h *Hello) PublicInterface(io io.Reader) (int, error) {
-	bytes := []byte{}
-	fmt.Printf("%v", io)
+	bytes := make([]byte, 1024)
 	return io.Read(bytes)
 }
 

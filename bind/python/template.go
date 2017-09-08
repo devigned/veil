@@ -259,7 +259,12 @@ def _internal_{{$func.Name}}({{$func.PrintArgs}}, userdata):
 	{{ range $_, $param := $func.Params -}}
 	  {{ printf "%s = %s" $param.Name $param.ReturnFormat }}
 	{{ end -}}
-	{{$cret}} = obj.{{$func.Name}}({{$func.PrintArgs}})
+	ret = obj.{{$func.Name}}({{$func.PrintArgs}})
+	{{$cret}} = ffi.new("ReturnType_2 *")
+	{{$cret}}.r0 = ffi.new("GoInt *", ret[0])
+	{{$cret}}.r1 = ffi.NULL
+	return {{$cret}}
+
 {{end -}}
 class {{$iface.Name}}(VeilObject):
 		def __init__(self, uuid_ptr=None):
@@ -270,6 +275,7 @@ class {{$iface.Name}}(VeilObject):
 			{{range $_, $func := $iface.Methods }}
 			self.__get_method__("register_callback")(self.uuid_ptr(), _CffiHelper.py2c_string("{{$func.RegistrationName}}"), _internal_{{$func.Name}})
 			{{end}}
+
 
 		def __go_type__(self):
 			return "{{$iface.CName}}"
