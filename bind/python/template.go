@@ -23,47 +23,64 @@ ffi.cdef("""{{.CDef}}""")
 
 class _CffiHelper(object):
 
-    here = os.path.dirname(os.path.abspath(__file__))
-    lib = ffi.dlopen(os.path.join(here, "output"))
+	here = os.path.dirname(os.path.abspath(__file__))
+	lib = ffi.dlopen(os.path.join(here, "output"))
 
-    @staticmethod
-    def error_string(ptr):
-        return _CffiHelper.c2py_string(_CffiHelper.lib.cgo_error_to_string(ptr))
+	@staticmethod
+	def error_string(ptr):
+		return _CffiHelper.c2py_string(_CffiHelper.lib.cgo_error_to_string(ptr))
 
-    @staticmethod
-    def cgo_free(ptr):
-        return _CffiHelper.lib.cgo_cfree(ptr)
+	@staticmethod
+	def cgo_free(ptr):
+		return _CffiHelper.lib.cgo_cfree(ptr)
 
-    @staticmethod
-    def cgo_decref(ptr):
-        return _CffiHelper.lib.cgo_decref(ptr)
+	@staticmethod
+	def cgo_decref(ptr):
+		return _CffiHelper.lib.cgo_decref(ptr)
 
-    @staticmethod
-    def handle_error(err):
-        ptr = ffi.cast("void *", err)
-        if not _CffiHelper.lib.cgo_is_error_nil(ptr):
-            raise Exception(_CffiHelper.error_string(ptr))
+	@staticmethod
+	def handle_error(err):
+		ptr = ffi.cast("void *", err)
+		if not _CffiHelper.lib.cgo_is_error_nil(ptr):
+			raise Exception(_CffiHelper.error_string(ptr))
 
-    @staticmethod
-    def c2py_string(s):
-        pystr = ffi.string(s)
-        _CffiHelper.lib.cgo_cfree(s)
-        if _PY3:
-            pystr = pystr.decode('utf-8')
-        return pystr
+	@staticmethod
+	def c2py_string(s):
+		pystr = ffi.string(s)
+		_CffiHelper.lib.cgo_cfree(s)
+		if _PY3:
+			pystr = pystr.decode('utf-8')
+		return pystr
 
-    @staticmethod
-    def py2c_string(s):
-    	if _PY3:
-    		s = s.encode('utf-8')
-    	return ffi.new("char[]", s)
+	@staticmethod
+	def py2c_string(s):
+		if _PY3:
+			s = s.encode('utf-8')
+		return ffi.new("char[]", s)
 
-    @staticmethod
-    def py2c_veil_object(vo):
-    	if vo is not None:
-    		return vo.uuid_ptr()
-    	else:
-    		return ffi.NULL
+	@staticmethod
+	def py2c_veil_object(vo):
+		if vo is not None:
+			return vo.uuid_ptr()
+		else:
+			return ffi.NULL
+
+	@staticmethod
+	def py2c(value):
+		if isinstance(value, int):
+			return ffi.new("int *", value)
+		elif isinstance(value, float):
+			return ffi.new("float *", value)
+		elif isinstance(value, str):
+			return _CffiHelper.py2c_string(value)
+		elif isinstance(value, VeilList):
+			return _CffiHelper.py2c_veil_object(value.veil_obj())
+		elif isinstance(value, VeilObject):
+			return _CffiHelper.py2c_veil_object(value)
+		elif value is None:
+			return ffi.NULL
+		else:
+			return ffi.NULL
 
 class VeilObject(object):
 	def __init__(self, uuid_ptr, tracked=True):
@@ -256,16 +273,17 @@ class {{$class.Name}}(VeilObject):
 
 {{range $_, $iface := .Interfaces}}
 {{range $_, $func := $iface.Methods }}
-@ffi.callback("void*(void*, void*)")
-def _internal_{{$func.Name}}({{$func.PrintArgs}}, userdata):
+{{$func.CallbackAttribute}}
+def _internal_{{$iface.CName}}_{{$func.Name}}({{$func.PrintArgs}}, userdata):
 	obj = ffi.from_handle(userdata)
 	{{ range $_, $param := $func.Params -}}
 	  {{ printf "%s = %s" $param.Name $param.ReturnFormatUntracked }}
 	{{ end -}}
 	ret = obj.{{$func.Name}}({{$func.PrintArgs}})
 	{{$cret}} = ffi.new("ReturnType_2 *")
-	{{$cret}}.r0 = ffi.new("int *", ret[0])
-	{{$cret}}.r1 = ffi.NULL
+	{{range $idx, $res := $func.Results -}}
+	{{$cret}}.r{{$idx}} = _CffiHelper.py2c(ret[{{$idx}}])
+	{{end -}}
 	return {{$cret}}
 
 {{end -}}
@@ -276,7 +294,7 @@ class {{$iface.Name}}(VeilObject):
 				uuid_ptr = self.__get_method__("new")(self._handle)
 			super(Reader, self).__init__(uuid_ptr)
 			{{range $_, $func := $iface.Methods }}
-			self.__get_method__("register_callback")(self.uuid_ptr(), _CffiHelper.py2c_string("{{$func.RegistrationName}}"), _internal_{{$func.Name}})
+			self.__get_method__("register_callback")(self.uuid_ptr(), _CffiHelper.py2c_string("{{$func.RegistrationName}}"), _internal_{{$iface.CName}}_{{$func.Name}})
 			{{end}}
 
 

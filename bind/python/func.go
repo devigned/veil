@@ -77,3 +77,11 @@ func (f Func) IsBound() bool {
 func (f Func) RegistrationName() string {
 	return f.fun.Name()
 }
+
+func (f Func) CallbackAttribute() string {
+	voidPtrs := make([]string, f.ResultsLength())
+	for i := 0; i < f.ResultsLength(); i++ {
+		voidPtrs[i] = "void*"
+	}
+	return fmt.Sprintf("@ffi.callback(\"void*(%s)\")", strings.Join(voidPtrs, ", "))
+}
