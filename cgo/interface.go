@@ -103,7 +103,7 @@ func (f Func) CDefs() (retTypes string, funcPtrs string, calls string) {
 		returnTypeDefName := fmt.Sprintf(""+"ReturnType_%d", resLen)
 		returnTypeDef := fmt.Sprintf("//typedef struct %s {%s;} %s;",
 			returnTypeDefName,
-			strings.Join(voidPtrs("r", resLen), "; "),
+			strings.Join(paddedReturnVoidPtrs("r", resLen), "; "),
 			returnTypeDefName)
 
 		funcArgs := strings.Join(voidPtrs("arg", paramLen), ", ")
@@ -122,8 +122,8 @@ func (f Func) CDefs() (retTypes string, funcPtrs string, calls string) {
 
 		return returnTypeDef, funcPtrDef, callHandleFuncDef
 	} else if resLen == 1 {
-		//typedef void FuncPtr_1_2(void *bytes, void *handle);
-		//inline void CallHandleFunc_1_2(void *bytes, void *handle, FuncPtr_1_2 *fn) { return fn(bytes, handle); }
+		//typedef void* FuncPtr_1_2(void *bytes, void *handle);
+		//inline void* CallHandleFunc_1_2(void *bytes, void *handle, FuncPtr_1_2 *fn) { return fn(bytes, handle); }
 		funcArgs := strings.Join(voidPtrs("arg", paramLen), ", ")
 		funcPtrDefName := f.CallbackFuncPtrName()
 		funcPtrDef := fmt.Sprintf("//typedef void* %s(%s);",
@@ -164,6 +164,15 @@ func (f Func) CallbackFuncName() string {
 func (f Func) CallbackFuncPtrName() string {
 	sig := f.Signature()
 	return fmt.Sprintf("FuncPtr_%d_%d", sig.Results().Len(), sig.Params().Len())
+}
+
+func paddedReturnVoidPtrs(prefix string, length int) []string {
+	results := make([]string, length+1)
+	for i := 0; i < length; i++ {
+		results[i] = fmt.Sprintf("void *%s%d", prefix, i)
+	}
+	results[length] = "void *empty"
+	return results
 }
 
 func voidPtrs(prefix string, length int) []string {
@@ -251,6 +260,38 @@ func (iface Interface) MethodAsts() []ast.Decl {
 	return asts
 }
 
+/*
+InterfaceCallbackAst produces proxy functions for interface methods which act as a C bridge between
+Golang and the hosting language. It translates Golang Args to C args, calls a function callback into
+the hosting language providing arguments, an object handle, and captures a return. The return struct
+is then transformed back into Golang and C arguments are freed.
+
+The function looks like the following.
+
+func (iface veil_io_Reader_helper) Read(p []byte) (n int, err error) {
+	fun, ok := iface.callbacks["Read"]
+	if ok {
+		arg0 := C.CBytes(cgo_incref(unsafe.Pointer(&p)).Bytes())
+		res := C.CallHandleFunc_2_1(arg0, iface.handle, (*C.FuncPtr_2_1)(fun))
+		cgo_decref(arg0)
+		var r0 int
+		if res.r0 == nil {
+			panic("result: 0 is nil and must have a value")
+		} else {
+			r0 = *(*int)(res.r0)
+		}
+		var r1 error
+		if res.r1 == nil {
+			r1 = nil
+		} else {
+			r1 = *(*error)(res.r1)
+		}
+		return r0, r1
+	} else {
+		panic("can't find registerd method: Read")
+	}
+}
+*/
 func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 	sig := f.Signature()
 	params := make([]*ast.Field, sig.Params().Len())
@@ -285,10 +326,30 @@ func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 		}
 	}
 
-	callArgs := make([]ast.Expr, len(params)+2)
+	reqArgAssignments := make([]ast.Stmt, len(params))
 	for i := 0; i < len(params); i++ {
 		p := sig.Params().At(i)
-		callArgs[i] = CastOut(p.Type(), params[i].Names[0])
+		reqArgAssignments[i] = &ast.AssignStmt{
+			Lhs: []ast.Expr{NewIdent(fmt.Sprintf("arg%d", i))},
+			Tok: token.DEFINE,
+			Rhs: []ast.Expr{CastOut(p.Type(), params[i].Names[0])},
+		}
+	}
+
+	freeArgStmts := make([]ast.Stmt, len(params))
+	for i := 0; i < len(params); i++ {
+		argIdent := NewIdent(fmt.Sprintf("arg%d", i))
+		freeArgStmts[i] = &ast.ExprStmt{
+			X: &ast.CallExpr{
+				Fun:  NewIdent("cgo_decref"),
+				Args: []ast.Expr{argIdent},
+			},
+		}
+	}
+
+	callArgs := make([]ast.Expr, len(params)+2)
+	for i := 0; i < len(params); i++ {
+		callArgs[i] = NewIdent(fmt.Sprintf("arg%d", i))
 	}
 
 	callArgs[len(params)] = &ast.SelectorExpr{
@@ -347,36 +408,12 @@ func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 
 		ifStmt := &ast.IfStmt{
 			Cond: &ast.BinaryExpr{
-				X: &ast.BinaryExpr{
-					X: &ast.SelectorExpr{
-						X:   resIdent,
-						Sel: resIdxIdent,
-					},
-					Op: token.EQL,
-					Y:  NewIdent("nil"),
+				X: &ast.SelectorExpr{
+					X:   resIdent,
+					Sel: resIdxIdent,
 				},
-				Op: token.LOR,
-				Y: &ast.BinaryExpr{
-					X: &ast.SelectorExpr{
-						X:   resIdent,
-						Sel: resIdxIdent,
-					},
-					Op: token.EQL,
-					Y:  &ast.CallExpr{
-						Fun: unsafePointer,
-						Args: []ast.Expr{
-							&ast.CallExpr{
-								Fun: NewIdent("uintptr"),
-								Args: []ast.Expr{
-									&ast.BasicLit{
-										Value: "0x4000000000000",
-										Kind:  token.INT,
-									},
-								},
-							},
-						},
-					},
-				},
+				Op: token.EQL,
+				Y:  NewIdent("nil"),
 			},
 			Body: &ast.BlockStmt{
 				List: trueBody,
@@ -400,7 +437,10 @@ func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 		resultExprs[i] = NewIdent(fmt.Sprintf("r%d", i))
 	}
 
-	ifStmtBody := []ast.Stmt{
+	// arg0 := C.CBytes(cgo_incref(unsafe.Pointer(&p)).Bytes()) ...
+	ifStmtBody := reqArgAssignments
+	// res := C.CallHandleFunc_2_1(arg0, iface.handle, (*C.FuncPtr_2_1)(fun))
+	ifStmtBody = append(ifStmtBody,
 		&ast.AssignStmt{
 			Lhs: []ast.Expr{resIdent},
 			Tok: token.DEFINE,
@@ -413,10 +453,19 @@ func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 					Args: callArgs,
 				},
 			},
-		},
-	}
-
+		})
+	// cgo_decref(arg0) ...
+	ifStmtBody = append(ifStmtBody, freeArgStmts...)
+	/*
+		var r0 int
+		if res.r0 == nil {
+			panic("result: 0 is nil and must have a value")
+		} else {
+			r0 = *(*int)(res.r0)
+		} ...
+	*/
 	ifStmtBody = append(ifStmtBody, resultHandlers...)
+	// return r0, r1
 	ifStmtBody = append(ifStmtBody, Return(resultExprs...))
 
 	body := []ast.Stmt{

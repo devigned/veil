@@ -68,7 +68,14 @@ func (h *Hello) PublicBound(arg1 int) (string, error) {
 
 func (h *Hello) PublicInterface(io io.Reader) (int, error) {
 	bytes := make([]byte, 1024)
-	return io.Read(bytes)
+	n, err := io.Read(bytes)
+	if err != nil {
+		return 0, err
+	}
+
+	fmt.Println(string(bytes[:n]))
+
+	return n, nil
 }
 
 // NewHello constructs a new instance of Hello
