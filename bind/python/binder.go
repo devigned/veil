@@ -2,6 +2,7 @@ package python
 
 import (
 	"bufio"
+	"fmt"
 	"github.com/devigned/veil/cgo"
 	"github.com/devigned/veil/core"
 	"github.com/emirpasic/gods/sets/hashset"
@@ -23,14 +24,16 @@ const (
 )
 
 var (
-	startCGoDefine  = regexp.MustCompile(`^typedef`)
+	startCGoDefine  = regexp.MustCompile(`^typedef|^struct`)
 	sizeOfRemove    = regexp.MustCompile(`_check_for_64_bit_pointer_matching_GoInt`)
 	complexRemove   = regexp.MustCompile(`_Complex`)
 	endif           = regexp.MustCompile(`^#endif`)
+	pounds          = regexp.MustCompile(`^#line|#ifndef|^#define|^#ifdef`)
+	inline          = regexp.MustCompile(`^inline`)
 	endOfCGoDefine  = regexp.MustCompile(`^#ifdef __cplusplus`)
 	extern          = regexp.MustCompile(`^extern \w`)
 	sizeTypeReplace = regexp.MustCompile(`__SIZE_TYPE__`)
-	removeFilters   = []*regexp.Regexp{sizeOfRemove, complexRemove}
+	removeFilters   = []*regexp.Regexp{sizeOfRemove, complexRemove, pounds, inline}
 	replaceFilters  = map[string]*regexp.Regexp{"size_t": sizeTypeReplace}
 	reserved_words  = hashset.New()
 )
@@ -56,28 +59,28 @@ type TemplateData struct {
 	Constructors   map[string]*Func
 	Classes        []*Class
 	Lists          []*List
+	Interfaces     []*Interface
 	CffiHelperName string
 	ReturnVarName  string
+	LibName        string
 }
 
 // NewBinder creates a new Binder for Python
-func NewBinder(pkg *cgo.Package) core.Bindable {
+func NewBinder(pkg *cgo.Package) core.Binder {
 	return &Binder{
 		pkg: pkg,
 	}
 }
 
 func (p Binder) NewList(slice *cgo.Slice) *List {
-	_, name := slice.ElementPackageAliasAndPath(nil)
-	sliceType := core.ToCap(name)
 	v := types.NewVar(token.Pos(0), nil, "value", slice.Elem())
 	return &List{
+		Slice:        slice,
 		MethodPrefix: slice.CGoName(),
-		SliceType:    sliceType,
 		InputFormat: func() string {
 			return InputFormat("value", slice.Elem())
 		},
-		OutputFormat: p.NewParam(v).ReturnFormat,
+		OutputFormat: p.NewParam(v, "value").ReturnFormatWithName,
 	}
 }
 
@@ -85,8 +88,8 @@ func (p Binder) NewClass(s *cgo.Struct) *Class {
 	fields := []*Param{}
 	for i := 0; i < s.Struct().NumFields(); i++ {
 		field := s.Struct().Field(i)
-		param := p.NewParam(s.Struct().Field(i))
-		if cgo.ShouldGenerate(field) && !IsReservedWord(param.Name()) {
+		param := p.NewParam(s.Struct().Field(i), fmt.Sprintf("param_%d", i))
+		if cgo.ShouldGenerateField(field) && !IsReservedWord(param.Name()) {
 			fields = append(fields, param)
 		}
 	}
@@ -115,11 +118,36 @@ func (p Binder) NewClass(s *cgo.Struct) *Class {
 	}
 }
 
+func (p Binder) NewInterface(i *cgo.Interface) *Interface {
+	methods := []*Func{}
+	for _, f := range i.ExportedMethods() {
+		fun := p.ToFunc(f)
+		if !IsReservedWord(fun.Name) {
+			methods = append(methods, fun)
+		}
+	}
+
+	return &Interface{
+		binder:    &p,
+		Interface: i,
+		Methods:   methods,
+	}
+}
+
+func (p *Binder) NewParam(v *types.Var, defaultName string) *Param {
+	return &Param{
+		underlying:  v,
+		binder:      p,
+		DefaultName: defaultName,
+	}
+}
+
 // Bind is the Python 3 implementation of Bind
-func (p Binder) Bind(outDir string) error {
-	headerPath := path.Join(outDir, HEADER_FILE_NAME)
+func (p Binder) Bind(outDir, libName string) error {
+	headerPath := path.Join(outDir, fmt.Sprintf("%s.h", libName))
 	cdefText, err := p.cDefText(headerPath)
 	if err != nil {
+		fmt.Println(err)
 		return core.NewSystemErrorF("Failed to generate Python CDefs: %v", err)
 	}
 
@@ -128,11 +156,14 @@ func (p Binder) Bind(outDir string) error {
 		Funcs:          p.Funcs(),
 		Classes:        p.Classes(),
 		Lists:          p.Lists(),
+		Interfaces:     p.Interfaces(),
 		CffiHelperName: CFFI_HELPER_NAME,
 		ReturnVarName:  RETURN_VAR_NAME,
+		LibName:        libName,
 	}
 
 	pythonFilePath := path.Join(outDir, FILE_NAME)
+	fmt.Println("foo", pythonFilePath)
 	f, err := os.Create(pythonFilePath)
 	if err != nil {
 		return core.NewSystemErrorF("Unable to create %s", path.Join(outDir, FILE_NAME))
@@ -169,6 +200,14 @@ func (p Binder) Classes() []*Class {
 	return classes
 }
 
+func (p Binder) Interfaces() []*Interface {
+	interfaces := make([]*Interface, len(p.pkg.Interfaces()))
+	for idx, i := range p.pkg.Interfaces() {
+		interfaces[idx] = p.NewInterface(i)
+	}
+	return interfaces
+}
+
 func (p Binder) Funcs() []*Func {
 	funcs := []*Func{}
 	for _, f := range p.pkg.Funcs() {
@@ -199,13 +238,13 @@ func (p Binder) ToGenericFunc(f *cgo.Func) *Func {
 	pyParams := make([]*Param, f.Signature().Params().Len())
 	for i := 0; i < f.Signature().Params().Len(); i++ {
 		param := f.Signature().Params().At(i)
-		pyParams[i] = p.NewParam(param)
+		pyParams[i] = p.NewParam(param, fmt.Sprintf("param_%d", i))
 	}
 
 	pyResults := make([]*Param, f.Signature().Results().Len())
 	for i := 0; i < f.Signature().Results().Len(); i++ {
 		param := f.Signature().Results().At(i)
-		pyResults[i] = p.NewParam(param)
+		pyResults[i] = p.NewParam(param, fmt.Sprintf("r_%d", i))
 	}
 	return &Func{
 		fun:     f,

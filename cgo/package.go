@@ -13,6 +13,7 @@ import (
 	"github.com/devigned/veil/core"
 	"github.com/emirpasic/gods/maps"
 	"github.com/emirpasic/gods/maps/treemap"
+	"github.com/emirpasic/gods/sets/treeset"
 	"github.com/marstr/collection"
 	"go/ast"
 	"strings"
@@ -107,6 +108,18 @@ func (p Package) Structs() []*Struct {
 	return v
 }
 
+func (p Package) Interfaces() []*Interface {
+	keysValues := p.symbols.Select(func(key, value interface{}) bool {
+		_, ok := value.(*Interface)
+		return ok
+	})
+	v := make([]*Interface, keysValues.Size())
+	for idx, item := range keysValues.Values() {
+		v[idx] = item.(*Interface)
+	}
+	return v
+}
+
 func (p Package) ExportedTypes() []types.Type {
 	values := p.AstTransformers()
 	output := make([]types.Type, len(values))
@@ -137,9 +150,8 @@ func (p *Package) build() error {
 	}
 
 	for _, aster := range p.AstTransformers() {
-		if item, ok := aster.(Packaged); ok {
-			path := item.PackagePath()
-			p.packageAliases.Put(PkgPathAliasFromString(path), path)
+		if item, ok := aster.(Aliased); ok {
+			p.packageAliases.Put(item.Alias(), item.Path())
 		}
 	}
 
@@ -185,10 +197,20 @@ func (p Package) addExportedObject(obj interface{}) error {
 		case *types.Basic:
 			// Todo: should this be handled differently?
 		case *types.Interface:
-			// Todo: probably should handle interfaces
+			if !ImplementsError(named) {
+				iface := NewInterface(named)
+				if addExport(iface) {
+					for _, method := range iface.ExportedMethods() {
+						for _, v := range allVars(method) {
+							if err := p.addExportedObject(v.Type()); err != nil {
+								return err
+							}
+						}
+					}
+				}
+			}
 		case *types.Slice:
-			namedWrapper := NewNamed(named)
-			addExport(namedWrapper)
+			addExport(NewNamed(named))
 		default:
 			return core.NewSystemError("I don't know how to handle named types like: ", obj)
 		}
@@ -243,6 +265,37 @@ func (p Package) ToAst() []ast.Decl {
 	}
 
 	return decls
+}
+
+func (p Package) CDefinitions() []string {
+	retTypes := []string{}
+	funcPtrs := []string{}
+	calls := []string{}
+	for _, iface := range p.Interfaces() {
+		r, f, c := iface.CDefs()
+		retTypes = append(retTypes, r...)
+		funcPtrs = append(funcPtrs, f...)
+		calls = append(calls, c...)
+	}
+	retTypes = uniqStrings(retTypes...)
+	funcPtrs = uniqStrings(funcPtrs...)
+	calls = uniqStrings(calls...)
+	return append(append(retTypes, funcPtrs...), calls...)
+}
+
+func uniqStrings(items ...string) []string {
+	set := treeset.NewWithStringComparator()
+
+	for _, item := range items {
+		set.Add(item)
+	}
+
+	slice := make([]string, set.Size())
+	for idx, def := range set.Values() {
+		slice[idx] = def.(string)
+	}
+
+	return slice
 }
 
 func (p Package) IsConstructor(f *Func) bool {

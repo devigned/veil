@@ -13,8 +13,8 @@ type Slice struct {
 }
 
 // NewSliceWrapper wraps types.Slice to provide a consistent comparison
-func NewSlice(elem types.Type) Slice {
-	return Slice{
+func NewSlice(elem types.Type) *Slice {
+	return &Slice{
 		elem: elem,
 	}
 }
@@ -52,12 +52,10 @@ func (s Slice) IsExportable() bool {
 }
 
 func (s Slice) MethodName() string {
-	pkgAlias, name := s.ElementPackageAliasAndPath(nil)
-	pkgAlias = strings.Replace(pkgAlias, "[]", "slice_of", -1)
-	if pkgAlias != "" {
-		return pkgAlias + "_" + name
-	}
-	return name
+	typeString := s.ElementPackageAliasAndPath(nil)
+	typeString = strings.Replace(typeString, "[]", "slice_of", -1)
+	typeString = strings.Replace(typeString, ".", "_", -1)
+	return typeString
 }
 
 func (s Slice) ElementName() string {
@@ -65,40 +63,15 @@ func (s Slice) ElementName() string {
 }
 
 func elementName(typ types.Type) string {
-	pkgAlias, name := elementPackageAliasAndPath(typ)
-	if pkgAlias == "" {
-		return name
-	} else {
-		return pkgAlias + "." + name
-	}
+	return TypeExpressionToString(TypeExpression(typ))
 }
 
-func (s Slice) ElementPackageAliasAndPath(typ types.Type) (string, string) {
+func (s Slice) ElementPackageAliasAndPath(typ types.Type) string {
 	if typ == nil {
 		typ = s.elem
 	}
 
-	return elementPackageAliasAndPath(typ)
-}
-
-func elementPackageAliasAndPath(typ types.Type) (string, string) {
-	objToString := func(typeName *types.TypeName) (string, string) {
-		return PkgPathAliasFromString(typeName.Pkg().Path()), typeName.Name()
-	}
-	switch t := typ.(type) {
-	case *types.Basic:
-		return "", t.Name()
-	case *types.Named:
-		obj := t.Obj()
-		return objToString(obj)
-	case *types.Pointer:
-		return elementPackageAliasAndPath(t.Elem())
-	case *types.Slice:
-		alias, name := elementPackageAliasAndPath(t.Elem())
-		return "[]" + alias, name
-	default:
-		return "", t.String()
-	}
+	return TypeExpressionToString(TypeExpression(typ))
 }
 
 func (s Slice) Elem() types.Type {

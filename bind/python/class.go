@@ -2,7 +2,6 @@ package python
 
 import (
 	"github.com/devigned/veil/cgo"
-	"go/types"
 )
 
 type Class struct {
@@ -14,7 +13,7 @@ type Class struct {
 }
 
 func (c Class) Name() string {
-	return c.Struct.Named.Obj().Name()
+	return c.Named.Obj().Name()
 }
 
 func (c Class) MethodName(p *Param) string {
@@ -23,11 +22,4 @@ func (c Class) MethodName(p *Param) string {
 
 func (c Class) NewMethodName() string {
 	return c.Struct.NewMethodName()
-}
-
-func (p *Binder) NewParam(v *types.Var) *Param {
-	return &Param{
-		underlying: v,
-		binder:     p,
-	}
 }

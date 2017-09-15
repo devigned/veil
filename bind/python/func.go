@@ -41,22 +41,19 @@ func (f Func) PrintArgs() string {
 
 func (f Func) PrintReturns() string {
 	returns := ""
-	//if f.fun.CName() == "github_com_azure_azure_sdk_for_go_storage_Container_Create" {
-	//	fmt.Println("got here")
-	//}
 	if len(f.Results) > 1 {
 		names := []string{}
 		for i := 0; i < len(f.Results); i++ {
 			result := f.Results[i]
 			if !cgo.ImplementsError(result.underlying.Type()) {
-				names = append(names, result.ReturnFormat(fmt.Sprintf(RETURN_VAR_NAME+".r%d", i)))
+				names = append(names, result.ReturnFormatWithName(fmt.Sprintf(RETURN_VAR_NAME+".r%d", i)))
 			}
 		}
 		returns = strings.Join(names, ", ")
 	} else if len(f.Results) == 1 {
 		if !cgo.ImplementsError(f.Results[0].underlying.Type()) {
 			result := f.Results[0]
-			returns = result.ReturnFormat(RETURN_VAR_NAME)
+			returns = result.ReturnFormatWithName(RETURN_VAR_NAME)
 		}
 	}
 
@@ -67,6 +64,10 @@ func (f Func) PrintReturns() string {
 	}
 }
 
+func (f Func) ParamsLength() int {
+	return len(f.Params)
+}
+
 // ResultsLength returns the length of the results array
 func (f Func) ResultsLength() int {
 	return len(f.Results)
@@ -75,4 +76,16 @@ func (f Func) ResultsLength() int {
 // IsBound returns true if the function is bound to a named type
 func (f Func) IsBound() bool {
 	return f.fun.BoundRecv == nil
+}
+
+func (f Func) RegistrationName() string {
+	return f.fun.Name()
+}
+
+func (f Func) CallbackAttribute() string {
+	voidPtrs := make([]string, f.ResultsLength())
+	for i := 0; i < f.ResultsLength(); i++ {
+		voidPtrs[i] = "void*"
+	}
+	return fmt.Sprintf("@ffi.callback(\"void*(%s)\")", strings.Join(voidPtrs, ", "))
 }

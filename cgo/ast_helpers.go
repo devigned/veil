@@ -48,6 +48,18 @@ var (
 	})
 )
 
+func Panic(message string) ast.Expr {
+	return &ast.CallExpr{
+		Fun: NewIdent("panic"),
+		Args: []ast.Expr{
+			&ast.BasicLit{
+				Kind:  token.STRING,
+				Value: "\"" + message + "\"",
+			},
+		},
+	}
+}
+
 // CObjectStruct produces an AST struct which will represent a C exposed Object
 func CObjectStruct() ast.Decl {
 	return &ast.GenDecl{
@@ -117,11 +129,20 @@ func RefsStruct() ast.Decl {
 
 // NewAst produces the []ast.Decl to construct a slice type and increment it's reference count
 func NewAst(functionName string, goType ast.Expr) ast.Decl {
+	emptyBody := func(id *ast.Ident) []ast.Stmt { return []ast.Stmt{} }
+	return NewAstWithInitialization(functionName, goType, []*ast.Field{}, emptyBody)
+}
+
+func NewAstWithInitialization(functionName string, goType ast.Expr, params []*ast.Field, inits func(*ast.Ident) []ast.Stmt) ast.Decl {
 	localVarIdent := NewIdent("o")
 	target := &ast.UnaryExpr{
 		Op: token.AND,
 		X:  localVarIdent,
 	}
+
+	body := []ast.Stmt{DeclareVar(localVarIdent, goType)}
+	body = append(body, inits(localVarIdent)...)
+	body = append(body, Return(UuidToCBytes(IncrementRefCall(target))))
 
 	funcDecl := &ast.FuncDecl{
 		Doc: &ast.CommentGroup{
@@ -129,6 +150,9 @@ func NewAst(functionName string, goType ast.Expr) ast.Decl {
 		},
 		Name: NewIdent(functionName),
 		Type: &ast.FuncType{
+			Params: &ast.FieldList{
+				List: params,
+			},
 			Results: &ast.FieldList{
 				List: []*ast.Field{
 					{Type: unsafePointer},
@@ -136,10 +160,7 @@ func NewAst(functionName string, goType ast.Expr) ast.Decl {
 			},
 		},
 		Body: &ast.BlockStmt{
-			List: []ast.Stmt{
-				DeclareVar(localVarIdent, goType),
-				Return(UuidToCBytes(IncrementRefCall(target))),
-			},
+			List: body,
 		},
 	}
 
@@ -917,23 +938,65 @@ func CFree() ast.Decl {
 }
 
 func ToCString(targets ...ast.Expr) ast.Expr {
+	return ToC("CString", targets...)
+}
+
+func ToCFloat(targets ...ast.Expr) ast.Expr {
+	return ToC("float", targets...)
+}
+
+func ToCDouble(targets ...ast.Expr) ast.Expr {
+	return ToC("double", targets...)
+}
+
+func ToCChar(targets ...ast.Expr) ast.Expr {
+	return ToC("char", targets...)
+}
+
+func ToCShort(targets ...ast.Expr) ast.Expr {
+	return ToC("short", targets...)
+}
+
+func ToCUShort(targets ...ast.Expr) ast.Expr {
+	return ToC("ushort", targets...)
+}
+
+func ToCUInt(targets ...ast.Expr) ast.Expr {
+	return ToC("uint", targets...)
+}
+
+func ToCInt(targets ...ast.Expr) ast.Expr {
+	return ToC("int", targets...)
+}
+
+func ToCLong(targets ...ast.Expr) ast.Expr {
+	return ToC("long", targets...)
+}
+
+func ToCULong(targets ...ast.Expr) ast.Expr {
+	return ToC("ulong", targets...)
+}
+
+func ToCLongLong(targets ...ast.Expr) ast.Expr {
+	return ToC("longlong", targets...)
+}
+
+func ToCULongLong(targets ...ast.Expr) ast.Expr {
+	return ToC("ulonglong", targets...)
+}
+
+func ToC(typeName string, targets ...ast.Expr) ast.Expr {
 	return &ast.CallExpr{
 		Fun: &ast.SelectorExpr{
 			X:   NewIdent("C"),
-			Sel: NewIdent("CString"),
+			Sel: NewIdent(typeName),
 		},
 		Args: targets,
 	}
 }
 
 func ToGoString(targets ...ast.Expr) ast.Expr {
-	return &ast.CallExpr{
-		Fun: &ast.SelectorExpr{
-			X:   NewIdent("C"),
-			Sel: NewIdent("GoString"),
-		},
-		Args: targets,
-	}
+	return ToC("GoString", targets...)
 }
 
 func ToUnsafePointer(targets ...ast.Expr) ast.Expr {
@@ -1073,6 +1136,17 @@ func IncludeComments(includeNames ...string) []*ast.Comment {
 	for i := 0; i < len(comments); i++ {
 		comments[i] = &ast.Comment{
 			Text:  "//#include " + includeNames[i],
+			Slash: token.Pos(1),
+		}
+	}
+	return comments
+}
+
+func RawComments(strs ...string) []*ast.Comment {
+	comments := make([]*ast.Comment, len(strs))
+	for i := 0; i < len(comments); i++ {
+		comments[i] = &ast.Comment{
+			Text:  strs[i],
 			Slash: token.Pos(1),
 		}
 	}
@@ -1233,6 +1307,34 @@ func buildFuncResults(sig *types.Signature, functionCall ast.Expr) (ast.Stmt, *a
 	}
 }
 
+func CastBasicArg(kind types.BasicKind, name ast.Expr) ast.Expr {
+	switch kind {
+	case types.String:
+		return ToCString(name)
+	case types.Int8, types.Uint8:
+		return ToCChar(name)
+	case types.Int16:
+		return ToCShort(name)
+	case types.Uint16:
+		return ToCUShort(name)
+	case types.Int32, types.Int:
+		return ToCInt(name)
+	case types.Uint32:
+		return ToCUInt(name)
+	case types.Float32:
+		return ToCFloat(name)
+	case types.Float64:
+		return ToCDouble(name)
+	case types.Int64:
+		return ToCLongLong(name)
+	case types.Uint64:
+		return ToCULongLong(name)
+	default:
+		return name
+	}
+
+}
+
 func CastOut(t types.Type, name ast.Expr) ast.Expr {
 	switch typ := t.(type) {
 	case *types.Basic:
@@ -1272,15 +1374,21 @@ func CastExpr(t types.Type, ident ast.Expr) ast.Expr {
 	case *types.Pointer:
 		return Ref(CastExpr(t.Elem(), ident))
 	case *types.Named:
-		pkg := t.Obj().Pkg()
-		typeName := t.Obj().Name()
-		castExpr := DeRef(CastUnsafePtrOfTypeUuid(
-			DeRef(&ast.SelectorExpr{
-				X:   NewIdent(PkgPathAliasFromString(pkg.Path())),
-				Sel: NewIdent(typeName),
-			}),
-			ident))
-		return castExpr
+		path := PkgPathAliasFromString(t.Obj().Pkg().Path())
+		if _, ok := t.Underlying().(*types.Interface); ok {
+			typ := NewIdent(path + "_" + t.Obj().Name() + "_helper")
+			castExpr := DeRef(CastUnsafePtrOfTypeUuid(DeRef(typ), ident))
+			return castExpr
+		} else {
+			typeName := t.Obj().Name()
+			castExpr := DeRef(CastUnsafePtrOfTypeUuid(
+				DeRef(&ast.SelectorExpr{
+					X:   NewIdent(path),
+					Sel: NewIdent(typeName),
+				}),
+				ident))
+			return castExpr
+		}
 	case *types.Slice:
 		slice := NewSlice(t.Elem())
 		goTypeExpr := slice.GoTypeExpr()
@@ -1327,14 +1435,14 @@ func UnsafePtrOrBasic(p *types.Var, t types.Type) *ast.Field {
 	switch typ := t.(type) {
 	case *types.Basic:
 		return VarToField(p, t)
-	//case *types.Named, *types.Interface:
-	//	if ImplementsError(t) {
-	//		return &ast.Field{
-	//			Type: NewIdent("error"),
-	//		}
-	//	} else {
-	//		return returnDefault()
-	//	}
+		//case *types.Named, *types.Interface:
+		//	if ImplementsError(t) {
+		//		return &ast.Field{
+		//			Type: NewIdent("error"),
+		//		}
+		//	} else {
+		//		return returnDefault()
+		//	}
 	case *types.Pointer:
 		if basic, ok := typ.Elem().(*types.Basic); ok {
 			return VarToField(p, basic)
@@ -1416,13 +1524,12 @@ func shouldGenerate(v *types.Var, t types.Type) bool {
 	switch typ := t.(type) {
 	case *types.Chan, *types.Map, *types.Signature:
 		supportedType = false
-	case *types.Interface:
-		if !ImplementsError(typ) {
-			supportedType = false
-		}
 	case *types.Pointer:
 		return shouldGenerate(v, typ.Elem())
 	case *types.Named:
+		if _, ok := typ.Underlying().(*types.Interface); ok {
+			return NewInterface(typ).IsExportable()
+		}
 		return shouldGenerate(v, typ.Underlying())
 	}
 	return supportedType
@@ -1502,9 +1609,54 @@ func NamedToField(p *types.Var, named *types.Named) *ast.Field {
 // PkgPathAliasFromString takes a golang path as a string and returns an import alias for that path
 func PkgPathAliasFromString(path string) string {
 	splits := strings.FieldsFunc(path, splitPkgPath)
-	return strings.Join(splits, "_")
+	return strings.Join(append([]string{"veil"}, splits...), "_")
 }
 
 func splitPkgPath(r rune) bool {
 	return r == '.' || r == '/' || r == '-'
+}
+
+func TypeExpression(typ types.Type) ast.Expr {
+	objToString := func(typeName *types.TypeName) ast.Expr {
+		if typeName.Pkg() == nil {
+			return NewIdent(typeName.Name())
+		} else {
+			return &ast.SelectorExpr{
+				X:   NewIdent(PkgPathAliasFromString(typeName.Pkg().Path())),
+				Sel: NewIdent(typeName.Name()),
+			}
+		}
+	}
+	switch t := typ.(type) {
+	case *types.Basic:
+		return NewIdent(t.Name())
+	case *types.Named:
+		obj := t.Obj()
+		return objToString(obj)
+	case *types.Pointer:
+		return DeRef(TypeExpression(t.Elem()))
+	case *types.Slice:
+		return &ast.ArrayType{
+			Elt: TypeExpression(t.Elem()),
+		}
+	default:
+		return NewIdent(t.String())
+	}
+}
+
+func TypeExpressionToString(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.SelectorExpr:
+		return TypeExpressionToString(t.X) + "." + TypeExpressionToString(t.Sel)
+	case *ast.Ident:
+		return t.Name
+	case *ast.ArrayType:
+		return "[]" + TypeExpressionToString(t.Elt)
+	case *ast.MapType:
+		return "map[" + TypeExpressionToString(t.Key) + "]" + TypeExpressionToString(t.Value)
+	case *ast.StarExpr:
+		return "pointer_to_" + TypeExpressionToString(t.X)
+	default:
+		panic(fmt.Sprintf("Don't know how to transform %v to string", expr))
+	}
 }

@@ -67,7 +67,8 @@ func (n Named) ToStringMethodName() string {
 // Methods returns the list of methods decorated on the named type
 func (n Named) ExportedMethods() []*Func {
 	var methods []*Func
-	for i := 0; i < n.NumMethods(); i++ {
+	numMethods := n.NumMethods()
+	for i := 0; i < numMethods; i++ {
 		meth := n.Method(i)
 		fun := NewBoundFunc(meth, &n)
 		if fun.IsExportable() {
@@ -83,11 +84,15 @@ func (n Named) CShortName() string {
 
 // CName returns the fully resolved name to the named type
 func (n Named) CName() string {
-	return strings.Join([]string{PkgPathAliasFromString(n.PackagePath()), n.Obj().Name()}, "_")
+	return strings.Join([]string{n.Alias(), n.Obj().Name()}, "_")
 }
 
-func (n Named) PackagePath() string {
+func (n Named) Path() string {
 	return n.Obj().Pkg().Path()
+}
+
+func (n Named) Alias() string {
+	return PkgPathAliasFromString(n.Path())
 }
 
 func (n Named) ExportName() string {
