@@ -24,7 +24,7 @@ ffi.cdef("""{{.CDef}}""")
 class _CffiHelper(object):
 
 	here = os.path.dirname(os.path.abspath(__file__))
-	lib = ffi.dlopen(os.path.join(here, "output"))
+	lib = ffi.dlopen(os.path.join(here, "{{.LibName}}"))
 
 	@staticmethod
 	def error_string(ptr):
@@ -161,9 +161,9 @@ class VeilError(Exception):
         return _CffiHelper.lib.cgo_is_error_nil(uuid_ptr)
 
 {{range $_, $listType := .Lists}}
-class {{$listType.SliceType}}List(VeilList):
+class {{$listType.ListTypeName}}(VeilList):
 	def __init__(self, data=None, uuid_ptr=None, tracked=True):
-		super({{$listType.SliceType}}List, self).__init__(data=data, uuid_ptr=uuid_ptr, tracked=tracked)
+		super({{$listType.ListTypeName}}, self).__init__(data=data, uuid_ptr=uuid_ptr, tracked=tracked)
 
 	def __go_slice_type__(self):
 		return "{{$listType.MethodPrefix}}"
@@ -274,7 +274,11 @@ class {{$class.Name}}(VeilObject):
 {{range $_, $iface := .Interfaces}}
 {{range $_, $func := $iface.Methods }}
 {{$func.CallbackAttribute}}
+{{if gt $func.ParamsLength 0}}
 def _internal_{{$iface.CName}}_{{$func.Name}}({{$func.PrintArgs}}, userdata):
+{{else}}
+def _internal_{{$iface.CName}}_{{$func.Name}}(userdata):
+{{end}}
 	obj = ffi.from_handle(userdata)
 	{{ range $_, $param := $func.Params -}}
 	  {{ printf "%s = %s" $param.Name $param.ReturnFormatUntracked }}
@@ -292,7 +296,7 @@ class {{$iface.Name}}(VeilObject):
 			if uuid_ptr is None:
 				self._handle = ffi.new_handle(self)
 				uuid_ptr = self.__get_method__("new")(self._handle)
-			super(Reader, self).__init__(uuid_ptr)
+			super({{$iface.Name}}, self).__init__(uuid_ptr)
 			{{range $_, $func := $iface.Methods }}
 			self.__get_method__("register_callback")(self.uuid_ptr(), _CffiHelper.py2c_string("{{$func.RegistrationName}}"), _internal_{{$iface.CName}}_{{$func.Name}})
 			{{end}}

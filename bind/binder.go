@@ -15,15 +15,15 @@ import (
 )
 
 var (
-	registry = map[string]func(*cgo.Package) core.Bindable{"py3": python.NewBinder}
+	registry = map[string]func(*cgo.Package) core.Binder{"py3": python.NewBinder}
 )
 
 type wrapper struct {
-	binder core.Bindable
+	binder core.Binder
 	pkg    *cgo.Package
 }
 
-func (b wrapper) Bind(outDir string) error {
+func (b wrapper) Bind(outDir, libName string) error {
 	code := toCodeFile(b.pkg)
 	mainFile := path.Join(outDir, "main.go")
 	f, err := os.Create(mainFile)
@@ -37,13 +37,13 @@ func (b wrapper) Bind(outDir string) error {
 	printer.Fprint(w, &token.FileSet{}, code)
 	w.Flush()
 
-	buildSharedLib(outDir)
-	b.binder.Bind(outDir)
+	buildSharedLib(outDir, libName)
+	b.binder.Bind(outDir, libName)
 	return nil
 }
 
 // NewBinder is a factory method for creating a new binder for a given target
-func NewBinder(pkg *cgo.Package, target string) (core.Bindable, error) {
+func NewBinder(pkg *cgo.Package, target string) (core.Binder, error) {
 	binderFactory, ok := registry[target]
 	if !ok {
 		return nil, core.NewSystemError(fmt.Sprintf("I don't know how to create a binder for %s", target))
@@ -57,8 +57,8 @@ func NewBinder(pkg *cgo.Package, target string) (core.Bindable, error) {
 	return bindable, nil
 }
 
-func buildSharedLib(outDir string) error {
-	cmd := exec.Command("go", "build", "-buildmode", "c-shared", ".")
+func buildSharedLib(outDir, libName string) error {
+	cmd := exec.Command("go", "build", "-o", libName, "-buildmode", "c-shared", ".")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

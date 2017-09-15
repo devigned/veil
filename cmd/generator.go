@@ -15,14 +15,16 @@ type Generator struct {
 	PkgPath string
 	OutDir  string
 	Targets []string
+	LibName string
 }
 
 // NewGenerator constructs a new Generator instance
-func NewGenerator(pkgPath string, outDir string, targets []string) *Generator {
+func NewGenerator(pkgPath string, outDir string, libName string, targets []string) *Generator {
 	return &Generator{
 		PkgPath: pkgPath,
 		OutDir:  outDir,
 		Targets: targets,
+		LibName: libName,
 	}
 }
 
@@ -57,7 +59,7 @@ func (g Generator) Execute() error {
 		if err != nil {
 			return err
 		}
-		binder.Bind(outDir)
+		binder.Bind(outDir, g.LibName)
 	}
 
 	return nil

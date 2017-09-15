@@ -34,7 +34,7 @@ for a Golang package in each of the targets`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return NewGenerator(pkgPath, outDir, targets).Execute()
+			return NewGenerator(pkgPath, outDir, libName, targets).Execute()
 		},
 	}
 	supportedTargets = []string{defaultTarget, "java"}
@@ -42,6 +42,7 @@ for a Golang package in each of the targets`,
 	targets []string
 	pkgPath string
 	outDir  string
+	libName string
 )
 
 func init() {
@@ -59,7 +60,7 @@ func init() {
 		"pkg",
 		"p",
 		"",
-		"Path to Golang package to generate bindings (example github.com/devigned/veil/example/helloworld)")
+		"Path to Golang package to generate bindings (example github.com/devigned/veil/_examples/helloworld)")
 
 	generateCmd.Flags().StringVarP(
 		&outDir,
@@ -67,4 +68,11 @@ func init() {
 		"o",
 		path.Join(cwd, "output"),
 		"Output directory to drop generated binding")
+
+	generateCmd.Flags().StringVarP(
+		&libName,
+		"name",
+		"n",
+		"libgen",
+		"Name of the CGo library to be generated in the output directory")
 }

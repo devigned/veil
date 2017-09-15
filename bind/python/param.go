@@ -16,12 +16,17 @@ const (
 )
 
 type Param struct {
-	underlying *types.Var
-	binder     *Binder
+	underlying  *types.Var
+	binder      *Binder
+	DefaultName string
 }
 
 func (p Param) Name() string {
-	return core.ToSnake(p.underlying.Name())
+	name := p.DefaultName
+	if p.underlying.Name() != "" {
+		name = p.underlying.Name()
+	}
+	return core.ToSnake(name)
 }
 
 func (p Param) IsError() bool {
@@ -79,7 +84,7 @@ func InputFormat(varName string, typ types.Type) string {
 	return ""
 }
 
-func (p Param) ReturnFormatUntracked() string{
+func (p Param) ReturnFormatUntracked() string {
 	return p.ReturnFormatWithNameAndTracked(p.Name(), false)
 }
 

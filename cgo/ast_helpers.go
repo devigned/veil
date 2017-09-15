@@ -938,23 +938,65 @@ func CFree() ast.Decl {
 }
 
 func ToCString(targets ...ast.Expr) ast.Expr {
+	return ToC("CString", targets...)
+}
+
+func ToCFloat(targets ...ast.Expr) ast.Expr {
+	return ToC("float", targets...)
+}
+
+func ToCDouble(targets ...ast.Expr) ast.Expr {
+	return ToC("double", targets...)
+}
+
+func ToCChar(targets ...ast.Expr) ast.Expr {
+	return ToC("char", targets...)
+}
+
+func ToCShort(targets ...ast.Expr) ast.Expr {
+	return ToC("short", targets...)
+}
+
+func ToCUShort(targets ...ast.Expr) ast.Expr {
+	return ToC("ushort", targets...)
+}
+
+func ToCUInt(targets ...ast.Expr) ast.Expr {
+	return ToC("uint", targets...)
+}
+
+func ToCInt(targets ...ast.Expr) ast.Expr {
+	return ToC("int", targets...)
+}
+
+func ToCLong(targets ...ast.Expr) ast.Expr {
+	return ToC("long", targets...)
+}
+
+func ToCULong(targets ...ast.Expr) ast.Expr {
+	return ToC("ulong", targets...)
+}
+
+func ToCLongLong(targets ...ast.Expr) ast.Expr {
+	return ToC("longlong", targets...)
+}
+
+func ToCULongLong(targets ...ast.Expr) ast.Expr {
+	return ToC("ulonglong", targets...)
+}
+
+func ToC(typeName string, targets ...ast.Expr) ast.Expr {
 	return &ast.CallExpr{
 		Fun: &ast.SelectorExpr{
 			X:   NewIdent("C"),
-			Sel: NewIdent("CString"),
+			Sel: NewIdent(typeName),
 		},
 		Args: targets,
 	}
 }
 
 func ToGoString(targets ...ast.Expr) ast.Expr {
-	return &ast.CallExpr{
-		Fun: &ast.SelectorExpr{
-			X:   NewIdent("C"),
-			Sel: NewIdent("GoString"),
-		},
-		Args: targets,
-	}
+	return ToC("GoString", targets...)
 }
 
 func ToUnsafePointer(targets ...ast.Expr) ast.Expr {
@@ -1265,6 +1307,34 @@ func buildFuncResults(sig *types.Signature, functionCall ast.Expr) (ast.Stmt, *a
 	}
 }
 
+func CastBasicArg(kind types.BasicKind, name ast.Expr) ast.Expr {
+	switch kind {
+	case types.String:
+		return ToCString(name)
+	case types.Int8, types.Uint8:
+		return ToCChar(name)
+	case types.Int16:
+		return ToCShort(name)
+	case types.Uint16:
+		return ToCUShort(name)
+	case types.Int32, types.Int:
+		return ToCInt(name)
+	case types.Uint32:
+		return ToCUInt(name)
+	case types.Float32:
+		return ToCFloat(name)
+	case types.Float64:
+		return ToCDouble(name)
+	case types.Int64:
+		return ToCLongLong(name)
+	case types.Uint64:
+		return ToCULongLong(name)
+	default:
+		return name
+	}
+
+}
+
 func CastOut(t types.Type, name ast.Expr) ast.Expr {
 	switch typ := t.(type) {
 	case *types.Basic:
@@ -1457,6 +1527,9 @@ func shouldGenerate(v *types.Var, t types.Type) bool {
 	case *types.Pointer:
 		return shouldGenerate(v, typ.Elem())
 	case *types.Named:
+		if _, ok := typ.Underlying().(*types.Interface); ok {
+			return NewInterface(typ).IsExportable()
+		}
 		return shouldGenerate(v, typ.Underlying())
 	}
 	return supportedType
@@ -1561,7 +1634,7 @@ func TypeExpression(typ types.Type) ast.Expr {
 		obj := t.Obj()
 		return objToString(obj)
 	case *types.Pointer:
-		return TypeExpression(t.Elem())
+		return DeRef(TypeExpression(t.Elem()))
 	case *types.Slice:
 		return &ast.ArrayType{
 			Elt: TypeExpression(t.Elem()),
@@ -1581,6 +1654,8 @@ func TypeExpressionToString(expr ast.Expr) string {
 		return "[]" + TypeExpressionToString(t.Elt)
 	case *ast.MapType:
 		return "map[" + TypeExpressionToString(t.Key) + "]" + TypeExpressionToString(t.Value)
+	case *ast.StarExpr:
+		return "pointer_to_" + TypeExpressionToString(t.X)
 	default:
 		panic(fmt.Sprintf("Don't know how to transform %v to string", expr))
 	}

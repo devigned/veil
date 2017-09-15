@@ -64,6 +64,10 @@ func (f Func) PrintReturns() string {
 	}
 }
 
+func (f Func) ParamsLength() int {
+	return len(f.Params)
+}
+
 // ResultsLength returns the length of the results array
 func (f Func) ResultsLength() int {
 	return len(f.Results)

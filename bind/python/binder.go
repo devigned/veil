@@ -2,6 +2,7 @@ package python
 
 import (
 	"bufio"
+	"fmt"
 	"github.com/devigned/veil/cgo"
 	"github.com/devigned/veil/core"
 	"github.com/emirpasic/gods/sets/hashset"
@@ -61,26 +62,25 @@ type TemplateData struct {
 	Interfaces     []*Interface
 	CffiHelperName string
 	ReturnVarName  string
+	LibName        string
 }
 
 // NewBinder creates a new Binder for Python
-func NewBinder(pkg *cgo.Package) core.Bindable {
+func NewBinder(pkg *cgo.Package) core.Binder {
 	return &Binder{
 		pkg: pkg,
 	}
 }
 
 func (p Binder) NewList(slice *cgo.Slice) *List {
-	name := slice.ElementPackageAliasAndPath(nil)
-	sliceType := core.ToCap(name)
 	v := types.NewVar(token.Pos(0), nil, "value", slice.Elem())
 	return &List{
+		Slice:        slice,
 		MethodPrefix: slice.CGoName(),
-		SliceType:    sliceType,
 		InputFormat: func() string {
 			return InputFormat("value", slice.Elem())
 		},
-		OutputFormat: p.NewParam(v).ReturnFormatWithName,
+		OutputFormat: p.NewParam(v, "value").ReturnFormatWithName,
 	}
 }
 
@@ -88,7 +88,7 @@ func (p Binder) NewClass(s *cgo.Struct) *Class {
 	fields := []*Param{}
 	for i := 0; i < s.Struct().NumFields(); i++ {
 		field := s.Struct().Field(i)
-		param := p.NewParam(s.Struct().Field(i))
+		param := p.NewParam(s.Struct().Field(i), fmt.Sprintf("param_%d", i))
 		if cgo.ShouldGenerateField(field) && !IsReservedWord(param.Name()) {
 			fields = append(fields, param)
 		}
@@ -134,11 +134,20 @@ func (p Binder) NewInterface(i *cgo.Interface) *Interface {
 	}
 }
 
+func (p *Binder) NewParam(v *types.Var, defaultName string) *Param {
+	return &Param{
+		underlying:  v,
+		binder:      p,
+		DefaultName: defaultName,
+	}
+}
+
 // Bind is the Python 3 implementation of Bind
-func (p Binder) Bind(outDir string) error {
-	headerPath := path.Join(outDir, HEADER_FILE_NAME)
+func (p Binder) Bind(outDir, libName string) error {
+	headerPath := path.Join(outDir, fmt.Sprintf("%s.h", libName))
 	cdefText, err := p.cDefText(headerPath)
 	if err != nil {
+		fmt.Println(err)
 		return core.NewSystemErrorF("Failed to generate Python CDefs: %v", err)
 	}
 
@@ -150,9 +159,11 @@ func (p Binder) Bind(outDir string) error {
 		Interfaces:     p.Interfaces(),
 		CffiHelperName: CFFI_HELPER_NAME,
 		ReturnVarName:  RETURN_VAR_NAME,
+		LibName:        libName,
 	}
 
 	pythonFilePath := path.Join(outDir, FILE_NAME)
+	fmt.Println("foo", pythonFilePath)
 	f, err := os.Create(pythonFilePath)
 	if err != nil {
 		return core.NewSystemErrorF("Unable to create %s", path.Join(outDir, FILE_NAME))
@@ -227,13 +238,13 @@ func (p Binder) ToGenericFunc(f *cgo.Func) *Func {
 	pyParams := make([]*Param, f.Signature().Params().Len())
 	for i := 0; i < f.Signature().Params().Len(); i++ {
 		param := f.Signature().Params().At(i)
-		pyParams[i] = p.NewParam(param)
+		pyParams[i] = p.NewParam(param, fmt.Sprintf("param_%d", i))
 	}
 
 	pyResults := make([]*Param, f.Signature().Results().Len())
 	for i := 0; i < f.Signature().Results().Len(); i++ {
 		param := f.Signature().Results().At(i)
-		pyResults[i] = p.NewParam(param)
+		pyResults[i] = p.NewParam(param, fmt.Sprintf("r_%d", i))
 	}
 	return &Func{
 		fun:     f,

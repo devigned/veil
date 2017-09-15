@@ -41,6 +41,20 @@ func (iface Interface) ExportedMethods() []*Func {
 	return methods
 }
 
+func (iface Interface) IsExportable() bool {
+	underlyingIface := iface.Interface()
+	numMethods := underlyingIface.NumMethods()
+	for i := 0; i < numMethods; i++ {
+		meth := underlyingIface.Method(i)
+		fun := NewBoundFunc(meth, iface.named)
+		if !fun.IsExportable() && fun.Exported() {
+			// func exposes an argument that is not exportable
+			return false
+		}
+	}
+	return true
+}
+
 func (iface Interface) Interface() *types.Interface {
 	return iface.named.Underlying().(*types.Interface)
 }
@@ -63,10 +77,6 @@ func (iface Interface) Underlying() types.Type {
 
 func (iface Interface) ExportName() string {
 	return iface.named.CName()
-}
-
-func (iface Interface) IsExportable() bool {
-	return true
 }
 
 func (iface Interface) Name() string {
@@ -297,8 +307,12 @@ func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 	params := make([]*ast.Field, sig.Params().Len())
 	for i := 0; i < len(params); i++ {
 		p := sig.Params().At(i)
+		name := p.Name()
+		if name == "" {
+			name = fmt.Sprintf("param%d", i)
+		}
 		params[i] = &ast.Field{
-			Names: []*ast.Ident{NewIdent(p.Name())},
+			Names: []*ast.Ident{NewIdent(name)},
 			Type:  TypeExpression(p.Type()),
 		}
 	}
@@ -326,25 +340,36 @@ func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 		}
 	}
 
-	reqArgAssignments := make([]ast.Stmt, len(params))
+	reqArgAssignments := []ast.Stmt{}
 	for i := 0; i < len(params); i++ {
 		p := sig.Params().At(i)
-		reqArgAssignments[i] = &ast.AssignStmt{
-			Lhs: []ast.Expr{NewIdent(fmt.Sprintf("arg%d", i))},
-			Tok: token.DEFINE,
-			Rhs: []ast.Expr{CastOut(p.Type(), params[i].Names[0])},
+		argIdent := NewIdent(fmt.Sprintf("arg%d", i))
+		if basic, ok := p.Type().(*types.Basic); ok {
+			tmpArg := NewIdent(fmt.Sprintf("tmpArg%d", i))
+			reqArgAssignments = append(reqArgAssignments,
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{tmpArg},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{CastBasicArg(basic.Kind(), params[i].Names[0])},
+				},
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{argIdent},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{ToUnsafePointer(Ref(tmpArg))},
+				})
+		} else {
+			reqArgAssignments = append(reqArgAssignments, &ast.AssignStmt{
+				Lhs: []ast.Expr{NewIdent(fmt.Sprintf("arg%d", i))},
+				Tok: token.DEFINE,
+				Rhs: []ast.Expr{CastOut(p.Type(), params[i].Names[0])},
+			})
 		}
 	}
 
 	freeArgStmts := make([]ast.Stmt, len(params))
 	for i := 0; i < len(params); i++ {
 		argIdent := NewIdent(fmt.Sprintf("arg%d", i))
-		freeArgStmts[i] = &ast.ExprStmt{
-			X: &ast.CallExpr{
-				Fun:  NewIdent("cgo_decref"),
-				Args: []ast.Expr{argIdent},
-			},
-		}
+		freeArgStmts[i] = DecrementRefCall(argIdent)
 	}
 
 	callArgs := make([]ast.Expr, len(params)+2)
@@ -365,108 +390,60 @@ func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 		Args: []ast.Expr{funIdent},
 	}
 
-	resultHandlers := []ast.Stmt{}
-	for idx, res := range results {
-		resIdxIdent := NewIdent(fmt.Sprintf("r%d", idx))
-		// define result variable
-		decl := &ast.DeclStmt{
-			Decl: &ast.GenDecl{
-				Tok: token.VAR,
-				Specs: []ast.Spec{
-					&ast.TypeSpec{
-						Name: resIdxIdent,
-						Type: res.Type,
-					},
-				},
-			},
-		}
-
-		var elseExpr ast.Expr = CastUnsafePtr(DeRef(results[idx].Type), &ast.SelectorExpr{
-			X:   resIdent,
-			Sel: resIdxIdent,
-		})
-		if _, ok := results[idx].Type.(*ast.StarExpr); !ok {
-			elseExpr = DeRef(elseExpr)
-		}
-
-		var trueBody []ast.Stmt
-		if isTypeNilable(sig.Results().At(idx).Type()) {
-			trueBody = []ast.Stmt{
-				&ast.AssignStmt{
-					Lhs: []ast.Expr{resIdxIdent},
-					Tok: token.ASSIGN,
-					Rhs: []ast.Expr{NewIdent("nil")},
-				},
-			}
-		} else {
-			trueBody = []ast.Stmt{
-				&ast.ExprStmt{
-					X: Panic(fmt.Sprintf("result: %d is nil and must have a value", idx)),
-				},
-			}
-		}
-
-		ifStmt := &ast.IfStmt{
-			Cond: &ast.BinaryExpr{
-				X: &ast.SelectorExpr{
-					X:   resIdent,
-					Sel: resIdxIdent,
-				},
-				Op: token.EQL,
-				Y:  NewIdent("nil"),
-			},
-			Body: &ast.BlockStmt{
-				List: trueBody,
-			},
-			Else: &ast.BlockStmt{
-				List: []ast.Stmt{
-					&ast.AssignStmt{
-						Lhs: []ast.Expr{resIdxIdent},
-						Tok: token.ASSIGN,
-						Rhs: []ast.Expr{elseExpr},
-					},
-				},
-			},
-		}
-
-		resultHandlers = append(resultHandlers, decl, ifStmt)
-	}
-
-	resultExprs := make([]ast.Expr, len(results))
-	for i := 0; i < len(results); i++ {
-		resultExprs[i] = NewIdent(fmt.Sprintf("r%d", i))
-	}
-
 	// arg0 := C.CBytes(cgo_incref(unsafe.Pointer(&p)).Bytes()) ...
 	ifStmtBody := reqArgAssignments
-	// res := C.CallHandleFunc_2_1(arg0, iface.handle, (*C.FuncPtr_2_1)(fun))
-	ifStmtBody = append(ifStmtBody,
-		&ast.AssignStmt{
-			Lhs: []ast.Expr{resIdent},
-			Tok: token.DEFINE,
-			Rhs: []ast.Expr{
-				&ast.CallExpr{
+
+	if sig.Results().Len() > 0 {
+		// res := C.CallHandleFunc_2_1(arg0, iface.handle, (*C.FuncPtr_2_1)(fun))
+		ifStmtBody = append(ifStmtBody,
+			&ast.AssignStmt{
+				Lhs: []ast.Expr{resIdent},
+				Tok: token.DEFINE,
+				Rhs: []ast.Expr{
+					&ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   NewIdent("C"),
+							Sel: NewIdent(f.CallbackFuncName()),
+						},
+						Args: callArgs,
+					},
+				},
+			})
+	} else {
+		ifStmtBody = append(ifStmtBody,
+			&ast.ExprStmt{
+				X: &ast.CallExpr{
 					Fun: &ast.SelectorExpr{
 						X:   NewIdent("C"),
 						Sel: NewIdent(f.CallbackFuncName()),
 					},
 					Args: callArgs,
 				},
-			},
-		})
+			})
+	}
+
 	// cgo_decref(arg0) ...
 	ifStmtBody = append(ifStmtBody, freeArgStmts...)
-	/*
-		var r0 int
-		if res.r0 == nil {
-			panic("result: 0 is nil and must have a value")
-		} else {
-			r0 = *(*int)(res.r0)
-		} ...
-	*/
-	ifStmtBody = append(ifStmtBody, resultHandlers...)
-	// return r0, r1
-	ifStmtBody = append(ifStmtBody, Return(resultExprs...))
+
+	if sig.Results().Len() > 0 {
+		resultHandlers := buildResultHandlers(sig, results, resIdent)
+
+		resultExprs := make([]ast.Expr, len(results))
+		for i := 0; i < len(results); i++ {
+			resultExprs[i] = NewIdent(fmt.Sprintf("r%d", i))
+		}
+		/*
+			var r0 int
+			if res.r0 == nil {
+				panic("result: 0 is nil and must have a value")
+			} else {
+				r0 = *(*int)(res.r0)
+			} ...
+		*/
+		ifStmtBody = append(ifStmtBody, resultHandlers...)
+		// return r0, r1
+		ifStmtBody = append(ifStmtBody, Return(resultExprs...))
+	}
 
 	body := []ast.Stmt{
 		// fun, ok := r.callbacks["read"]
@@ -527,6 +504,87 @@ func (f Func) InterfaceCallbackAst(iface Interface) ast.Decl {
 		},
 	}
 	return funcDecl
+}
+
+func buildResultHandlers(sig *types.Signature, results []*ast.Field, resIdent *ast.Ident) []ast.Stmt {
+	resultHandlers := []ast.Stmt{}
+	if len(results) == 1 {
+		resultType := sig.Results().At(0).Type()
+		resVarIdent := NewIdent("r0")
+		resultHandlers = buildResultNilCheckAndCast(resultType, results[0], resVarIdent, resIdent)
+	} else if len(results) > 1 {
+		for idx, result := range results {
+			resIdxIdent := NewIdent(fmt.Sprintf("r%d", idx))
+			resultType := sig.Results().At(idx).Type()
+			resultHandler := buildResultNilCheckAndCast(resultType, result, resIdxIdent, &ast.SelectorExpr{
+				X:   resIdent,
+				Sel: resIdxIdent,
+			})
+			resultHandlers = append(resultHandlers, resultHandler...)
+		}
+	}
+
+	return resultHandlers
+}
+
+func buildResultNilCheckAndCast(t types.Type, result *ast.Field, resIdxIdent *ast.Ident, resultSelector ast.Expr) []ast.Stmt {
+	// define result variable
+	decl := &ast.DeclStmt{
+		Decl: &ast.GenDecl{
+			Tok: token.VAR,
+			Specs: []ast.Spec{
+				&ast.TypeSpec{
+					Name: resIdxIdent,
+					Type: result.Type,
+				},
+			},
+		},
+	}
+
+	var elseExpr ast.Expr
+	if _, ok := result.Type.(*ast.StarExpr); !ok {
+		elseExpr = DeRef(CastUnsafePtr(DeRef(result.Type), resultSelector))
+	} else {
+		elseExpr = CastUnsafePtr(result.Type, resultSelector)
+	}
+
+	var trueBody []ast.Stmt
+	if isTypeNilable(t) {
+		trueBody = []ast.Stmt{
+			&ast.AssignStmt{
+				Lhs: []ast.Expr{resIdxIdent},
+				Tok: token.ASSIGN,
+				Rhs: []ast.Expr{NewIdent("nil")},
+			},
+		}
+	} else {
+		trueBody = []ast.Stmt{
+			&ast.ExprStmt{
+				X: Panic(fmt.Sprintf("result: %s is nil and must have a value", resIdxIdent)),
+			},
+		}
+	}
+
+	ifStmt := &ast.IfStmt{
+		Cond: &ast.BinaryExpr{
+			X:  resultSelector,
+			Op: token.EQL,
+			Y:  NewIdent("nil"),
+		},
+		Body: &ast.BlockStmt{
+			List: trueBody,
+		},
+		Else: &ast.BlockStmt{
+			List: []ast.Stmt{
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{resIdxIdent},
+					Tok: token.ASSIGN,
+					Rhs: []ast.Expr{elseExpr},
+				},
+			},
+		},
+	}
+	return []ast.Stmt{decl, ifStmt}
 }
 
 func isTypeNilable(t types.Type) bool {

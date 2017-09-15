@@ -78,6 +78,10 @@ func (h *Hello) PublicInterface(io io.Reader) (int, error) {
 	return n, nil
 }
 
+func ListOfHellos() []Hello {
+	return []Hello{{Bar: "Hi Steve!"}, {Bar: "Hi Jane!"}, {Bar: "Hi All!"}}
+}
+
 // NewHello constructs a new instance of Hello
 func NewHelloPtr(world World, foo int, bar string, buzz []string, baz float32) *Hello {
 	return &Hello{
