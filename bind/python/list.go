@@ -2,8 +2,8 @@ package python
 
 import (
 	"github.com/devigned/veil/cgo"
-	"strings"
 	"github.com/devigned/veil/core"
+	"strings"
 )
 
 type List struct {

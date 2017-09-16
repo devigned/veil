@@ -18,7 +18,10 @@ M = $(shell printf "\033[34;1m▶\033[0m")
 TIMEOUT = 10
 
 .PHONY: all
-all: fmt vendor | $(BASE) ; $(info $(M) building executable…) @ ## Build program binary
+all: fmt vendor build int_test | $(BASE)
+
+.PHONY: build
+build: fmt vendor | $(BASE) ; $(info $(M) building executable…) @ ## Build program binary
 	$Q cd $(BASE) && $(GO) build \
 		-tags release \
 		-ldflags '-X $(PACKAGE)/cmd.Version=$(VERSION) -X $(PACKAGE)/cmd.BuildDate=$(DATE)' \
@@ -60,8 +63,11 @@ test-verbose: ARGS=-v            ## Run tests in verbose mode with coverage repo
 test-race:    ARGS=-race         ## Run tests with race detector
 $(TEST_TARGETS): NAME=$(MAKECMDGOALS:test-%=%)
 $(TEST_TARGETS): test
-check test tests: fmt vendor | $(BASE) ; $(info $(M) running $(NAME:%=% )tests…) @ ## Run tests
+check test tests: fmt vendor build | $(BASE) ; $(info $(M) running $(NAME:%=% )tests…) @ ## Run tests
 	$Q cd $(BASE) && $(GO) test -timeout $(TIMEOUT)s $(ARGS) $(TESTPKGS)
+
+int_test: test | $(BASE) ; $(info $(M) running integration tests…) @ ## Run integration tests
+	$Q cd $(BASE) && python veil_test.py
 
 .PHONY: lint
 lint: vendor | $(BASE) $(GOLINT) ; $(info $(M) running golint…) @ ## Run golint

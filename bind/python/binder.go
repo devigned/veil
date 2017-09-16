@@ -163,7 +163,6 @@ func (p Binder) Bind(outDir, libName string) error {
 	}
 
 	pythonFilePath := path.Join(outDir, FILE_NAME)
-	fmt.Println("foo", pythonFilePath)
 	f, err := os.Create(pythonFilePath)
 	if err != nil {
 		return core.NewSystemErrorF("Unable to create %s", path.Join(outDir, FILE_NAME))
