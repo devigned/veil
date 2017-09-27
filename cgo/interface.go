@@ -123,7 +123,7 @@ func (f Func) CDefs() (retTypes string, funcPtrs string, calls string) {
 			funcPtrDefName,
 			funcArgs)
 
-		callHandleFuncDef := fmt.Sprintf("//inline struct %s* %s(%s, %s *fn){ return fn(%s); }",
+		callHandleFuncDef := fmt.Sprintf("//static inline struct %s* %s(%s, %s *fn){ return fn(%s); }",
 			returnTypeDefName,
 			f.CallbackFuncName(),
 			funcArgs,
@@ -140,7 +140,7 @@ func (f Func) CDefs() (retTypes string, funcPtrs string, calls string) {
 			funcPtrDefName,
 			funcArgs)
 
-		callHandleFuncDef := fmt.Sprintf("//inline void* %s(%s, %s *fn){ return fn(%s); }",
+		callHandleFuncDef := fmt.Sprintf("//static inline void* %s(%s, %s *fn){ return fn(%s); }",
 			f.CallbackFuncName(),
 			funcArgs,
 			funcPtrDefName,
@@ -156,7 +156,7 @@ func (f Func) CDefs() (retTypes string, funcPtrs string, calls string) {
 			funcPtrDefName,
 			funcArgs)
 
-		callHandleFuncDef := fmt.Sprintf("//inline void %s(%s, %s *fn){ return fn(%s); }",
+		callHandleFuncDef := fmt.Sprintf("//static inline void %s(%s, %s *fn){ return fn(%s); }",
 			f.CallbackFuncName(),
 			funcArgs,
 			funcPtrDefName,

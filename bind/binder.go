@@ -59,30 +59,31 @@ func NewBinder(pkg *cgo.Package, target string) (core.Binder, error) {
 }
 
 func getPackage(packageName string) error {
-	cmd := exec.Command("go", "get", packageName)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return core.NewSystemErrorF("error fetching package: %s with err: %v\n", packageName, err)
+	result := runCmd("", "go", "get", packageName)
+	if result != nil {
+		return core.NewSystemErrorF("error fetching package: %s with err: %v\n", packageName, result)
 	}
-
 	return nil
 }
 
 func buildSharedLib(outDir, libName string) error {
-	cmd := exec.Command("go", "build", "-o", libName, "-buildmode", "c-shared", ".")
+	result := runCmd(outDir, "go", "build", "-o", libName, "-buildmode", "c-shared", ".")
+	if result != nil {
+		return core.NewSystemErrorF("error building CGo shared library: %v\n", result)
+	}
+	return nil
+}
+
+func runCmd(dir, cmdName string, args ...string) error {
+	cmd := exec.Command(cmdName, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Dir = outDir
-
-	if err := cmd.Run(); err != nil {
-		return core.NewSystemErrorF("error building CGo shared library: %v\n", err)
+	if dir != "" {
+		cmd.Dir = dir
 	}
 
-	return nil
+	return cmd.Run()
 }
 
 // toCodeFile generates a CGo wrapper around the pkg

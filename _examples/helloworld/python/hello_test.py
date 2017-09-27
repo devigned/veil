@@ -1,5 +1,8 @@
 import generated
 import unittest
+import sys
+
+_PY3 = sys.version_info[0] == 3
 
 
 class TestHello(unittest.TestCase):
@@ -43,7 +46,11 @@ class StringReader(generated.Reader):
         self.s = s
 
     def read(self, p):
-        utf8_bytes = self.s.encode("utf-8")
+        if _PY3:
+            utf8_bytes = self.s.encode("utf-8")
+        else:
+            utf8_bytes = bytearray(self.s)
+
         if len(p) < len(utf8_bytes):
             raise Exception("buffer is not large enough")
 

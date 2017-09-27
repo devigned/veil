@@ -1,10 +1,11 @@
 language: go
 
 go:
-  - 1.8
+  - 1.9
 
 install:
   - go get github.com/Masterminds/glide
+  - pip install --user -r requirements.txt
 #  - go get github.com/golang/lint/golint
 
 script:
