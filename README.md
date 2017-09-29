@@ -1,4 +1,6 @@
 # Veil
+[![Build Status](https://travis-ci.org/devigned/veil.svg?branch=feature%2Finterfaces)](https://travis-ci.org/devigned/veil)
+
 Veil is a code generator, which exposes Golang packages via a generated C ABI that is consumed by 
 host languages through FFI. Currently, Veil supports Python, but could be used with any FFI 
 implementation.
