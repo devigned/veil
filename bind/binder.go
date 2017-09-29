@@ -37,6 +37,7 @@ func (b wrapper) Bind(outDir, libName string) error {
 	printer.Fprint(w, &token.FileSet{}, code)
 	w.Flush()
 
+	getPackage("github.com/satori/go.uuid")
 	buildSharedLib(outDir, libName)
 	b.binder.Bind(outDir, libName)
 	return nil
@@ -57,18 +58,32 @@ func NewBinder(pkg *cgo.Package, target string) (core.Binder, error) {
 	return bindable, nil
 }
 
+func getPackage(packageName string) error {
+	result := runCmd("", "go", "get", packageName)
+	if result != nil {
+		return core.NewSystemErrorF("error fetching package: %s with err: %v\n", packageName, result)
+	}
+	return nil
+}
+
 func buildSharedLib(outDir, libName string) error {
-	cmd := exec.Command("go", "build", "-o", libName, "-buildmode", "c-shared", ".")
+	result := runCmd(outDir, "go", "build", "-o", libName, "-buildmode", "c-shared", ".")
+	if result != nil {
+		return core.NewSystemErrorF("error building CGo shared library: %v\n", result)
+	}
+	return nil
+}
+
+func runCmd(dir, cmdName string, args ...string) error {
+	cmd := exec.Command(cmdName, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Dir = outDir
-
-	if err := cmd.Run(); err != nil {
-		return core.NewSystemErrorF("error building CGo shared library: %v\n", err)
+	if dir != "" {
+		cmd.Dir = dir
 	}
 
-	return nil
+	return cmd.Run()
 }
 
 // toCodeFile generates a CGo wrapper around the pkg

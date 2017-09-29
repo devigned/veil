@@ -29,7 +29,7 @@ var (
 	complexRemove   = regexp.MustCompile(`_Complex`)
 	endif           = regexp.MustCompile(`^#endif`)
 	pounds          = regexp.MustCompile(`^#line|#ifndef|^#define|^#ifdef`)
-	inline          = regexp.MustCompile(`^inline`)
+	inline          = regexp.MustCompile(`^static inline`)
 	endOfCGoDefine  = regexp.MustCompile(`^#ifdef __cplusplus`)
 	extern          = regexp.MustCompile(`^extern \w`)
 	sizeTypeReplace = regexp.MustCompile(`__SIZE_TYPE__`)
@@ -163,7 +163,6 @@ func (p Binder) Bind(outDir, libName string) error {
 	}
 
 	pythonFilePath := path.Join(outDir, FILE_NAME)
-	fmt.Println("foo", pythonFilePath)
 	f, err := os.Create(pythonFilePath)
 	if err != nil {
 		return core.NewSystemErrorF("Unable to create %s", path.Join(outDir, FILE_NAME))

@@ -1,12 +1,17 @@
 hash: 52bbaf17dbacfbb95dcf996ff43781fa1ebf1ee7e938f906828ae7d658cacace
-updated: 2017-08-09T15:27:11.136926327-07:00
+updated: 2017-09-15T11:24:32.848349656-07:00
 imports:
 - name: github.com/emirpasic/gods
   version: f6c17b524822278a87e3b3bd809fec33b51f5b46
   subpackages:
   - containers
+  - maps
+  - maps/treemap
   - sets
   - sets/hashset
+  - sets/treeset
+  - trees
+  - trees/redblacktree
   - utils
 - name: github.com/fsnotify/fsnotify
   version: 4da3e2cfbabc9f751898f250b49f2439785783a1
@@ -68,10 +73,12 @@ imports:
   version: 25c4ec802a7d637f88d584ab26798e94ad14c13b
 testImports:
 - name: github.com/davecgh/go-spew
-  version: 04cdfd42973bb9c8589fd6a731800cf222fde1a9
+  version: 6d212800a42e8ab5c146b8ace3490ee17e5225f9
   subpackages:
   - spew
 - name: github.com/pmezard/go-difflib
   version: d8ed2627bdf02c080bf22230dbb337003b7aba2d
   subpackages:
   - difflib
+- name: github.com/rendon/testcli
+  version: 6283090d169f51a2410b4e260341a01c9a4c0ca7
